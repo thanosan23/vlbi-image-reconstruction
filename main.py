@@ -5,7 +5,6 @@ from itertools import combinations
 from scipy.fft import fft2, ifft2, fftshift, ifftshift
 from PIL import Image
 from matplotlib.figure import Figure
-import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.lines as mlines
 from scipy.ndimage import gaussian_filter
@@ -222,6 +221,7 @@ class TelescopeApp:
         control_frame = tk.Frame(self.root)
         control_frame.pack(side=tk.LEFT, padx=20, pady=20)
 
+        # Hour Angle Slider
         tk.Label(control_frame, text="Hour Angle").pack()
         self.hour_angle_slider = tk.Scale(
             control_frame, from_=-180, to=180, orient=tk.HORIZONTAL,
@@ -229,6 +229,7 @@ class TelescopeApp:
         self.hour_angle_slider.set(self.hour_angle)
         self.hour_angle_slider.pack()
 
+        # Declination Slider
         tk.Label(control_frame, text="Declination").pack()
         self.declination_slider = tk.Scale(
             control_frame, from_=-90, to=90, orient=tk.HORIZONTAL,
@@ -236,6 +237,7 @@ class TelescopeApp:
         self.declination_slider.set(self.declination)
         self.declination_slider.pack()
 
+        # Wavelength Slider
         tk.Label(control_frame, text="Wavelength").pack()
         self.wavelength_slider = tk.Scale(
             control_frame, from_=1, to=10, orient=tk.HORIZONTAL,
@@ -243,9 +245,26 @@ class TelescopeApp:
         self.wavelength_slider.set(self.wavelength)
         self.wavelength_slider.pack()
 
+        # Telescope Management
+        tk.Label(control_frame, text="Telescope Management").pack(pady=10)
+        self.telescope_listbox = tk.Listbox(control_frame, height=10, width=30)
+        self.telescope_listbox.pack(pady=5)
+
+        self.update_telescope_listbox()
+
+        add_telescope_button = tk.Button(
+            control_frame, text="Add Telescopes", command=self.add_telescopes)
+        add_telescope_button.pack(pady=5)
+
+        remove_telescope_button = tk.Button(
+            control_frame, text="Remove Selected", command=self.remove_selected_telescope)
+        remove_telescope_button.pack(pady=5)
+
+        # Load Sky Image Button
         tk.Button(control_frame, text="Load Sky Image",
                   command=self.load_new_image).pack(pady=10)
 
+        # Plot Canvas
         self.fig = Figure(figsize=(12, 8), dpi=100, constrained_layout=True)
         self.ax8 = self.fig.add_subplot(3, 3, 1)
         self.ax1 = self.fig.add_subplot(3, 3, 2)
@@ -261,6 +280,30 @@ class TelescopeApp:
         self.canvas_widget.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
         self.fig.canvas.mpl_connect('pick_event', self.on_marker_pick)
+
+    def update_telescope_listbox(self):
+        self.telescope_listbox.delete(0, tk.END)
+        for i, (e, n) in enumerate(self.antenna_positions):
+            self.telescope_listbox.insert(
+                tk.END, f"Telescope {i}: E={e:.2f}, N={n:.2f}")
+
+    def add_telescopes(self):
+        file_path = filedialog.askopenfilename()
+        if file_path:
+            new_positions = self.parse_config_file(file_path)
+            self.antenna_positions = np.vstack(
+                [self.antenna_positions, new_positions])
+            self.update_results()
+            self.update_telescope_listbox()
+
+    def remove_selected_telescope(self):
+        selected_index = self.telescope_listbox.curselection()
+        if selected_index:
+            selected_index = selected_index[0]
+            self.antenna_positions = np.delete(
+                self.antenna_positions, selected_index, axis=0)
+            self.update_results()
+            self.update_telescope_listbox()
 
     def on_marker_pick(self, event):
         if isinstance(event.artist, mlines.Line2D):
