@@ -40,12 +40,13 @@ class TelescopeApp:
 
         self.telescope_array = TelescopeArray(mode="VLA")
 
+        self.telescope_list = None
+
         control_panel = ttk.Frame(main_container)
         control_panel.pack(side=tk.LEFT, fill=tk.Y, padx=5, pady=5)
 
-        self.setup_telescope_management(control_panel)
-
         self.setup_control_sections(control_panel)
+        self.setup_telescope_management(control_panel)
 
         plot_panel = ttk.Frame(main_container)
         plot_panel.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
@@ -56,40 +57,25 @@ class TelescopeApp:
         self.update_results()
 
     def setup_telescope_management(self, parent):
-        mgmt_frame = ttk.LabelFrame(
-            parent, text="Telescope Management", padding="5")
-        mgmt_frame.pack(side=tk.LEFT, fill=tk.Y, padx=5, pady=5)
-
-        self.telescope_list = tk.Listbox(
-            mgmt_frame, height=15, width=30, selectmode=tk.SINGLE)
-        self.telescope_list.pack(fill=tk.BOTH, expand=True, pady=5)
-
-        btn_frame = ttk.Frame(mgmt_frame)
-        btn_frame.pack(fill=tk.X, pady=5)
-
-        ttk.Button(btn_frame, text="Add Telescope",
-                   command=self.add_telescope).pack(side=tk.LEFT, padx=2)
-        ttk.Button(btn_frame, text="Remove Selected",
-                   command=self.remove_telescope).pack(side=tk.LEFT, padx=2)
-
-        ttk.Button(mgmt_frame, text="Load Sky Image",
-                   command=self.load_new_image).pack(fill=tk.X, pady=5)
-
         self.update_telescope_list()
 
     def update_telescope_list(self):
-        self.telescope_list.delete(0, tk.END)
+        self.telescope_listbox.delete(0, tk.END)
+
         if self.mode_var.get() == "VLA":
             for i, pos in enumerate(self.telescope_array.positions):
-                self.telescope_list.insert(tk.END,
-                                           f"Telescope {i}: E={pos[0]:.2f}, \
-                                           N={pos[1]:.2f}")
-        else:
-            for i, (name, (lat, lon)) in enumerate(zip(
-                    self.telescope_array.names, self.telescope_array.lat_lon)):
-                self.telescope_list.insert(tk.END,
-                                           f"{name}: Lat={lat:.2f}, \
-                                           Lon={lon:.2f}")
+                self.telescope_listbox.insert(
+                    tk.END, f"Telescope {i}: E={pos[0]:.2f}, N={pos[1]:.2f}"
+                )
+        else:  # EHT mode
+            for i, (name, (lat, lon)) in enumerate(zip(self.telescope_array.names,
+                                                       self.telescope_array.lat_lon
+                                                       )):
+                self.telescope_listbox.insert(
+                    tk.END, f"{name}: Lat={lat:.2f}, Lon={lon:.2f}"
+                )
+
+        self.root.update_idletasks()
 
     def add_telescope(self):
         if self.mode_var.get() == "VLA":
@@ -127,34 +113,31 @@ class TelescopeApp:
             self.update_results()
 
     def remove_telescope(self):
-        print("Remove telescope method called")
-        self.telescope_list.focus_set()
-        print(self.telescope_list.selection_get())
-        selection = self.telescope_list.curselection()
-        print(f"Current selection: {selection}")
+        self.telescope_listbox.focus_set()
+        selection = self.telescope_listbox.curselection()
         if not selection:
-            print("No telescope selected")
             return
 
         idx = selection[0]
-        print(f"Removing telescope at index: {idx}")
+
         if self.mode_var.get() == "VLA":
             if len(self.telescope_array.positions) > 1:
                 self.telescope_array.positions = np.delete(
                     self.telescope_array.positions, idx, axis=0)
                 self.telescope_array.compute_baselines()
-                self.update_telescope_list()
-                self.update_results()
+            else:
+                print("Cannot remove the last VLA telescope")
         else:
             if len(self.telescope_array.names) > 1:
                 self.telescope_array.names.pop(idx)
                 self.telescope_array.lat_lon = np.delete(
                     self.telescope_array.lat_lon, idx, axis=0)
                 self.telescope_array.compute_baselines()
-                self.update_telescope_list()
-                self.update_results()
+            else:
+                print("Cannot remove the last EHT telescope")
 
-        print(f"Remaining telescopes: {len(self.telescope_array.positions)}")
+        self.update_telescope_list()
+        self.update_results()
 
     def setup_control_sections(self, parent):
         style = ttk.Style()
@@ -246,6 +229,24 @@ class TelescopeApp:
                                           orient=tk.HORIZONTAL)
         self.threshold_slider.pack(
             side=tk.RIGHT, fill=tk.X, expand=True, padx=5)
+
+        telescope_management = ttk.LabelFrame(
+            parent, text="Telescope Management", style='Modern.TLabelframe')
+        telescope_management.pack(fill=tk.X, pady=10, padx=5)
+        self.telescope_listbox = tk.Listbox(
+            telescope_management, height=10, width=30)
+        self.telescope_listbox.pack(pady=5, padx=3)
+
+        ttk.Button(telescope_management, text="Add Telescope",
+                   command=self.add_telescope).pack(side=tk.LEFT, pady=5, padx=3)
+        ttk.Button(telescope_management, text="Remove Selected",
+                   command=self.remove_telescope).pack(side=tk.LEFT, pady=5, padx=3)
+
+        model_frame = ttk.Frame(parent)
+        model_frame.pack(fill=tk.X, pady=10, padx=5)
+        ttk.Button(model_frame, text="Load Sky Image",
+                   command=self.load_new_image,
+                   style='Modern.TButton').pack(fill=tk.X, pady=5)
 
         update_frame = ttk.Frame(parent)
         update_frame.pack(fill=tk.X, pady=10, padx=5)
@@ -340,6 +341,7 @@ class TelescopeApp:
         self.setup_plots(self.canvas.get_tk_widget().master)
 
         self.update_mode_controls()
+        self.update_telescope_list()
         self.update_results()
 
     def update_mode_controls(self):
