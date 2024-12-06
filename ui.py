@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import filedialog, ttk
 import numpy as np
-from scipy.fft import fft2, ifft2, fftshift, ifftshift
+from numpy.fft import fft2, ifft2, fftshift, ifftshift
 from PIL import Image
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -21,11 +21,11 @@ class TelescopeApp:
         main_container.pack(fill=tk.BOTH, expand=True)
 
         self.image_size = 256
-        self.wavelength = 1.0
+        self.wavelength = 0.001
         self.hour_angle = 45
         self.declination = 34.078745
         self.clean_gamma = 0.1
-        self.clean_threshold = 0.001
+        self.clean_threshold = 0.1
         self.start_time = datetime.datetime.now()
 
         self.mode_var = tk.StringVar(value="VLA")
@@ -67,10 +67,9 @@ class TelescopeApp:
                 self.telescope_listbox.insert(
                     tk.END, f"Telescope {i}: E={pos[0]:.2f}, N={pos[1]:.2f}"
                 )
-        else:  # EHT mode
+        else:
             for i, (name, (lat, lon)) in enumerate(zip(self.telescope_array.names,
-                                                       self.telescope_array.lat_lon
-                                                       )):
+                                                       self.telescope_array.lat_lon)):
                 self.telescope_listbox.insert(
                     tk.END, f"{name}: Lat={lat:.2f}, Lon={lon:.2f}"
                 )
@@ -163,72 +162,33 @@ class TelescopeApp:
             parent, text="Array Parameters", style='Modern.TLabelframe')
         array_frame.pack(fill=tk.X, pady=(0, 10), padx=5)
 
-        wavelength_frame = ttk.Frame(array_frame)
-        wavelength_frame.pack(fill=tk.X, pady=5)
-        ttk.Label(wavelength_frame, text="Wavelength (m):").pack(side=tk.LEFT)
-        self.wavelength_slider = ttk.Scale(wavelength_frame, from_=0.1,
-                                           to=10.0,
-                                           variable=self.wavelength_var,
-                                           orient=tk.HORIZONTAL)
-        self.wavelength_slider.pack(
-            side=tk.RIGHT, fill=tk.X, expand=True, padx=5)
+        def create_slider_with_label(frame, label_text, variable, from_, to):
+            slider_frame = ttk.Frame(frame)
+            slider_frame.pack(fill=tk.X, pady=5)
+            ttk.Label(slider_frame, text=label_text).pack(side=tk.LEFT)
+            value_label = ttk.Label(slider_frame, text=f"{variable.get():.2f}")
+            value_label.pack(side=tk.RIGHT, padx=5)
+            slider = ttk.Scale(slider_frame, from_=from_, to=to, variable=variable,
+                               orient=tk.HORIZONTAL, command=lambda v: value_label.config(text=f"{float(v):.2f}"))
+            slider.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=5)
 
-        self.vla_frame = ttk.Frame(array_frame)
-        ttk.Label(self.vla_frame, text="Hour Angle:").pack(side=tk.LEFT)
-        self.hour_angle_slider = ttk.Scale(self.vla_frame, from_=-180, to=180,
-                                           variable=self.hour_angle_var,
-                                           orient=tk.HORIZONTAL)
-        self.hour_angle_slider.pack(
-            side=tk.RIGHT, fill=tk.X, expand=True, padx=5)
-
-        self.eht_frame = ttk.Frame(array_frame)
-
-        time_frame = ttk.Frame(self.eht_frame)
-        time_frame.pack(fill=tk.X, pady=5)
-        ttk.Label(time_frame, text="Start Time:").pack(side=tk.LEFT)
-        self.time_label = ttk.Label(time_frame, textvariable=self.time_var)
-        self.time_label.pack(side=tk.LEFT, padx=5)
-        ttk.Button(time_frame, text="Set Time",
-                   command=self.set_time).pack(side=tk.RIGHT)
-
-        duration_frame = ttk.Frame(self.eht_frame)
-        duration_frame.pack(fill=tk.X, pady=5)
-        ttk.Label(duration_frame, text="Duration (hrs):").pack(side=tk.LEFT)
-        self.duration_slider = ttk.Scale(duration_frame, from_=1, to=24,
-                                         variable=self.duration_var,
-                                         orient=tk.HORIZONTAL)
-        self.duration_slider.pack(
-            side=tk.RIGHT, fill=tk.X, expand=True, padx=5)
-
-        dec_frame = ttk.Frame(array_frame)
-        dec_frame.pack(fill=tk.X, pady=5)
-        ttk.Label(dec_frame, text="Declination:").pack(side=tk.LEFT)
-        self.dec_slider = ttk.Scale(dec_frame, from_=-90, to=90,
-                                    variable=self.declination_var,
-                                    orient=tk.HORIZONTAL)
-        self.dec_slider.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=5)
+        create_slider_with_label(
+            array_frame, "Wavelength (mm):", self.wavelength_var, 0.01, 5)
+        create_slider_with_label(
+            array_frame, "Hour Angle:", self.hour_angle_var, -180, 180)
+        create_slider_with_label(
+            array_frame, "Declination:", self.declination_var, -90, 90)
+        create_slider_with_label(
+            array_frame, "Duration (hrs):", self.duration_var, 1, 24)
 
         clean_frame = ttk.LabelFrame(
             parent, text="CLEAN Parameters", style='Modern.TLabelframe')
         clean_frame.pack(fill=tk.X, pady=(0, 10), padx=5)
 
-        gamma_frame = ttk.Frame(clean_frame)
-        gamma_frame.pack(fill=tk.X, pady=5)
-        ttk.Label(gamma_frame, text="Loop Gain:").pack(side=tk.LEFT)
-        self.gamma_slider = ttk.Scale(gamma_frame, from_=0.01, to=1.0,
-                                      variable=self.clean_gamma_var,
-                                      orient=tk.HORIZONTAL)
-        self.gamma_slider.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=5)
-
-        threshold_frame = ttk.Frame(clean_frame)
-        threshold_frame.pack(fill=tk.X, pady=5)
-        ttk.Label(threshold_frame, text="Threshold:").pack(side=tk.LEFT)
-        self.threshold_slider = ttk.Scale(threshold_frame, from_=0.0001,
-                                          to=0.1,
-                                          variable=self.clean_threshold_var,
-                                          orient=tk.HORIZONTAL)
-        self.threshold_slider.pack(
-            side=tk.RIGHT, fill=tk.X, expand=True, padx=5)
+        create_slider_with_label(
+            clean_frame, "Loop Gain:", self.clean_gamma_var, 0.01, 1.0)
+        create_slider_with_label(
+            clean_frame, "Threshold:", self.clean_threshold_var, 0.0001, 1)
 
         telescope_management = ttk.LabelFrame(
             parent, text="Telescope Management", style='Modern.TLabelframe')
@@ -346,13 +306,7 @@ class TelescopeApp:
 
     def update_mode_controls(self):
         mode = self.mode_var.get()
-        if mode == "VLA":
-            if hasattr(self, 'eht_frame'):
-                self.eht_frame.pack_forget()
-            self.vla_frame.pack(fill=tk.X, pady=2)
-        else:
-            self.vla_frame.pack_forget()
-            self.eht_frame.pack(fill=tk.X, pady=2)
+        return mode
 
     def load_sky_image(self, image_path):
         img = Image.open(image_path).convert("L")
@@ -365,34 +319,42 @@ class TelescopeApp:
         image_center = np.array(self.sky_image.shape) // 2
 
         max_uv = np.max(np.abs(uv_coordinates))
-        scale_factor = (self.image_size // 4) / max_uv
+        scale_factor = (self.image_size // 2) / max_uv
 
         for u, v in uv_coordinates:
             u_scaled = int(round(u * scale_factor)) + image_center[0]
             v_scaled = int(round(v * scale_factor)) + image_center[1]
-            if (0 <= u_scaled < self.image_size and
-                    0 <= v_scaled < self.image_size):
+            if 0 <= u_scaled < self.image_size and 0 <= v_scaled < self.image_size:
                 visibilities.append(ft_image[u_scaled, v_scaled])
             else:
                 visibilities.append(0)
 
         visibilities = np.array(visibilities)
+
         ft_dirty_image = np.zeros(
             (self.image_size, self.image_size), dtype=complex)
 
         for (u, v), vis in zip(uv_coordinates, visibilities):
             u_scaled = int(round(u * scale_factor)) + image_center[0]
             v_scaled = int(round(v * scale_factor)) + image_center[1]
-            if (0 <= u_scaled < self.image_size
-                    and 0 <= v_scaled < self.image_size):
-                ft_dirty_image[u_scaled, v_scaled] = vis
+            if 0 <= u_scaled < self.image_size and 0 <= v_scaled < self.image_size:
+                ft_dirty_image[u_scaled, v_scaled] += vis
                 ft_dirty_image[-u_scaled % self.image_size, -
-                               v_scaled % self.image_size] = np.conj(vis)
+                               v_scaled % self.image_size] += np.conj(vis)
 
         dirty_image = np.abs(ifftshift(ifft2(fftshift(ft_dirty_image))))
         return dirty_image
 
     def generate_beam_image(self, uv_coordinates):
+        """
+        Generate the beam image using UV coordinates.
+
+        Parameters:
+        - uv_coordinates: Array of (u, v) pairs (spatial frequency coordinates).
+
+        Returns:
+        - beam_image: Synthesized beam image from the UV coverage.
+        """
         ft_beam_image = np.zeros(
             (self.image_size, self.image_size), dtype=complex)
         image_center = np.array((self.image_size // 2, self.image_size // 2))
@@ -414,10 +376,38 @@ class TelescopeApp:
         beam_image /= np.max(beam_image)
         return beam_image
 
+    def generate_uv_coverage(self):
+        uv_coordinates = []
+
+        if self.mode_var.get() == "VLA":
+            for i in range(len(self.telescope_array.positions)):
+                for j in range(i + 1, len(self.telescope_array.positions)):
+                    u = self.telescope_array.positions[j][0] - \
+                        self.telescope_array.positions[i][0]
+                    v = self.telescope_array.positions[j][1] - \
+                        self.telescope_array.positions[i][1]
+                    uv_coordinates.append((u, v))
+                    uv_coordinates.append((-u, -v))
+
+        elif self.mode_var.get() == "EHT":
+            for i in range(len(self.telescope_array.lat_lon)):
+                for j in range(i + 1, len(self.telescope_array.lat_lon)):
+                    lat1, lon1 = self.telescope_array.lat_lon[i]
+                    lat2, lon2 = self.telescope_array.lat_lon[j]
+
+                    u = lon2 - lon1
+                    v = lat2 - lat1
+                    uv_coordinates.append((u, v))
+                    uv_coordinates.append((-u, -v))
+
+        return np.array(uv_coordinates)
+
     def clean(self, dirty_image, beam_image, max_iterations=100):
         cleaned = np.zeros_like(dirty_image)
         residual = dirty_image.copy()
+
         beam_max = np.max(beam_image)
+        beam_image = beam_image / beam_max
         beam_center = np.array(beam_image.shape) // 2
 
         components = []
@@ -427,7 +417,7 @@ class TelescopeApp:
                 np.argmax(np.abs(residual)), residual.shape)
             max_val = residual[max_pos]
 
-            if np.abs(max_val) < self.clean_threshold * beam_max:
+            if np.abs(max_val) < self.clean_threshold:
                 break
 
             components.append((max_pos, max_val * self.clean_gamma))
@@ -440,16 +430,14 @@ class TelescopeApp:
             y_slice = slice(max(0, y_start), min(residual.shape[0], y_end))
             x_slice = slice(max(0, x_start), min(residual.shape[1], x_end))
             beam_y_slice = slice(
-                max(0, -y_start),
-                min(beam_image.shape[0], residual.shape[0] - y_start))
+                max(0, -y_start), min(beam_image.shape[0], residual.shape[0] - y_start))
             beam_x_slice = slice(
-                max(0, -x_start),
-                min(beam_image.shape[1], residual.shape[1] - x_start))
+                max(0, -x_start), min(beam_image.shape[1], residual.shape[1] - x_start))
 
             residual[y_slice, x_slice] -= max_val * self.clean_gamma * \
                 beam_image[beam_y_slice, beam_x_slice]
 
-        clean_beam = gaussian_filter(beam_image, sigma=2)
+        clean_beam = gaussian_filter(beam_image, sigma=0.001)
         clean_beam /= np.max(clean_beam)
 
         for (pos, amp) in components:
@@ -461,11 +449,9 @@ class TelescopeApp:
             y_slice = slice(max(0, y_start), min(cleaned.shape[0], y_end))
             x_slice = slice(max(0, x_start), min(cleaned.shape[1], x_end))
             beam_y_slice = slice(
-                max(0, -y_start),
-                min(clean_beam.shape[0], cleaned.shape[0] - y_start))
+                max(0, -y_start), min(clean_beam.shape[0], cleaned.shape[0] - y_start))
             beam_x_slice = slice(
-                max(0, -x_start),
-                min(clean_beam.shape[1], cleaned.shape[1] - x_start))
+                max(0, -x_start), min(clean_beam.shape[1], cleaned.shape[1] - x_start))
 
             cleaned[y_slice, x_slice] += amp * \
                 clean_beam[beam_y_slice, beam_x_slice]
@@ -519,6 +505,7 @@ class TelescopeApp:
         m.drawmeridians(np.arange(-180., 181., 60.), labels=[0, 0, 0, 1])
 
     def update_results(self):
+        self.update_parameters()
         try:
             if self.mode_var.get() == "VLA":
                 uv_coordinates = self.telescope_array.calculate_uv_coordinates(
@@ -540,14 +527,14 @@ class TelescopeApp:
                     print("Invalid time format")
                     return
 
-            self.telescope_array.wavelength = self.wavelength_var.get()
+            self.telescope_array.wavelength = self.wavelength_var.get() / 1000
 
             self.dirty_image = self.generate_dirty_image(uv_coordinates)
             self.beam_image = self.generate_beam_image(uv_coordinates)
             self.clean_image, _, _, _ = self.clean(
                 self.dirty_image,
                 self.beam_image,
-                max_iterations=100
+                max_iterations=10000
             )
 
             self.update_plots(uv_coordinates)
@@ -579,55 +566,62 @@ class TelescopeApp:
         if self.mode_var.get() == "VLA":
             max_baseline = np.max(np.linalg.norm(
                 self.telescope_array.positions, axis=1))
-            fov = 206265 * self.wavelength_var.get() / max_baseline
-            scale_unit = "arcsec"
+            fov_parsecs = (206265 * (self.wavelength_var.get() * 1000) /
+                           max_baseline) / 3.086e16
         else:
-            fov = 206265000 * self.wavelength_var.get() / \
-                np.max(np.abs(uv_coordinates))
-            scale_unit = "μarcsec"
+            fov_parsecs = (206265000 * (self.wavelength_var.get() * 1000) /
+                           np.max(np.abs(uv_coordinates))) / 3.086e16
 
-        self.ax_model.imshow(self.sky_image, cmap='hot', origin='lower')
-        scale_length = fov / 4
-        bar_x = self.image_size * 0.1
-        bar_y = self.image_size * 0.1
-        bar_width = self.image_size * 0.1
-        self.ax_model.plot([bar_x, bar_x + bar_width],
-                           [bar_y, bar_y], 'w-', linewidth=1)
-        self.ax_model.text(bar_x, bar_y - self.image_size * 0.08,
-                           f'{scale_length:.1f} {scale_unit}',
-                           color='white', fontsize=8)
+        self.ax_model.imshow(self.sky_image, cmap='hot', origin='lower',
+                             extent=[-fov_parsecs / 2, fov_parsecs / 2, -fov_parsecs / 2, fov_parsecs / 2])
         self.ax_model.set_title("Model Image (Sky)")
-
-        self.ax_beam.imshow(self.beam_image, cmap='hot', origin='lower')
-        self.ax_beam.set_title("Beam Pattern (PSF)")
+        self.ax_model.set_xlabel("Position (parsecs)")
+        self.ax_model.set_ylabel("Position (parsecs)")
 
         self.ax_uv.scatter(uv_coordinates[:, 0], uv_coordinates[:, 1],
                            c='blue', s=1, alpha=0.5)
         self.ax_uv.scatter(-uv_coordinates[:, 0], -uv_coordinates[:, 1],
                            c='red', s=1, alpha=0.5)
         self.ax_uv.set_title("UV Coverage")
-        self.ax_uv.set_xlabel("u (kλ)")
-        self.ax_uv.set_ylabel("v (kλ)")
+        self.ax_uv.set_xlabel("u (wavelengths)")
+        self.ax_uv.set_ylabel("v (wavelengths)")
         self.ax_uv.grid(True)
         self.ax_uv.axis('equal')
 
+        self.ax_beam.imshow(self.beam_image, cmap='hot', origin='lower',
+                            extent=[-fov_parsecs / 2, fov_parsecs / 2, -fov_parsecs / 2, fov_parsecs / 2])
+        self.ax_beam.set_title("Beam Pattern (PSF)")
+        self.ax_beam.set_xlabel("Position (parsecs)")
+        self.ax_beam.set_ylabel("Position (parsecs)")
+
+        self.ax_dirty.imshow(self.dirty_image, cmap='hot', origin='lower',
+                             extent=[-fov_parsecs / 2, fov_parsecs / 2, -fov_parsecs / 2, fov_parsecs / 2])
+        self.ax_dirty.set_title("Dirty Image")
+        self.ax_dirty.set_xlabel("Position (parsecs)")
+        self.ax_dirty.set_ylabel("Position (parsecs)")
+
+        self.ax_clean.imshow(self.clean_image, cmap='hot', origin='lower',
+                             extent=[-fov_parsecs / 2, fov_parsecs / 2, -fov_parsecs / 2, fov_parsecs / 2])
+        self.ax_clean.set_title("CLEAN Image")
+        self.ax_clean.set_xlabel("Position (parsecs)")
+        self.ax_clean.set_ylabel("Position (parsecs)")
+
         model_fft = np.abs(fftshift(fft2(ifftshift(self.sky_image))))
         self.ax_model_fft.imshow(
-            np.log10(model_fft + 1), cmap='hot', origin='lower')
+            np.log10(model_fft + 1), cmap='hot', origin='lower',
+            extent=[-fov_parsecs / 2, fov_parsecs / 2, -fov_parsecs / 2, fov_parsecs / 2])
         self.ax_model_fft.set_title("Model FFT")
+        self.ax_model_fft.set_xlabel("Position (parsecs)")
+        self.ax_model_fft.set_ylabel("Position (parsecs)")
 
-        self.ax_dirty.imshow(self.dirty_image, cmap='hot', origin='lower')
-        self.ax_dirty.set_title("Dirty Image")
-
-        self.ax_clean.imshow(self.clean_image, cmap='hot', origin='lower')
-        self.ax_clean.set_title("CLEAN Image")
+        self.fig.subplots_adjust(hspace=0.4, wspace=0.4)
 
         self.fig.tight_layout()
         self.canvas.draw()
 
     def load_new_image(self):
         file_path = filedialog.askopenfilename(
-            filetypes=[("Image files", "*.png *.jpg *.fits")])
+            filetypes=[("Image files", "*.png *.jpg *.jpeg *.fits")])
         if file_path:
             self.load_sky_image(file_path)
             self.update_results()
@@ -636,19 +630,19 @@ class TelescopeApp:
         self.hour_angle = self.hour_angle_var.get()
         self.declination = self.declination_var.get()
         self.wavelength = self.wavelength_var.get()
-        self.clean_gamma = self.gamma_var.get()
-        self.clean_threshold = self.threshold_var.get()
+        self.clean_gamma = self.clean_gamma_var.get()
+        self.clean_threshold = self.clean_threshold_var.get()
 
         if self.mode_var.get() == "EHT":
             try:
                 self.start_time = datetime.datetime.strptime(
-                    self.time_entry.get(), "%Y-%m-%d %H:%M:%S")
+                    self.time_var.get(), "%Y-%m-%d %H:%M:%S")
                 self.duration = self.duration_var.get()
             except ValueError:
                 pass
 
     def on_map_click(self, event):
-        if self.mode_var.get() != "EHT" or event.inaxes != self.ax_map:
+        if self.mode_var.get() != "EHT":
             return
 
         lon, lat = event.xdata, event.ydata
@@ -666,7 +660,7 @@ class TelescopeApp:
         if event.inaxes == self.ax_array and self.mode_var.get() == "VLA":
             if self.telescope_array.select_telescope(event):
                 self.update_plots(self.calculate_current_uv())
-        elif event.inaxes == self.ax_map and self.mode_var.get() == "EHT":
+        elif self.mode_var.get() == "EHT":
             self.on_map_click(event)
 
     def on_mouse_motion(self, event):
