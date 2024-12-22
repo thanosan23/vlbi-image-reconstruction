@@ -1,4 +1,5 @@
 arrays/
 models/
+fits/
 .DS_Store
 __pycache__/

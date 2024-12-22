@@ -8,6 +8,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from scipy.ndimage import gaussian_filter
 from mpl_toolkits.basemap import Basemap
 import datetime
+from astropy.io import fits
 
 from telescope import TelescopeArray
 
@@ -309,8 +310,18 @@ class TelescopeApp:
         return mode
 
     def load_sky_image(self, image_path):
-        img = Image.open(image_path).convert("L")
-        img = img.resize((self.image_size, self.image_size))
+        if image_path.endswith(".fits"):
+            img_data = fits.getdata(image_path)
+
+            img_data = img_data - np.min(img_data)
+            img_data = img_data / np.max(img_data) * 255.0
+
+            img = Image.fromarray(img_data.astype(np.uint8), 'L')
+        else:
+            img = Image.open(image_path).convert("L")
+
+        img = img.resize((self.image_size, self.image_size), Image.LANCZOS)
+
         self.sky_image = np.array(img) / 255.0
 
     def generate_dirty_image(self, uv_coordinates):
@@ -346,15 +357,6 @@ class TelescopeApp:
         return dirty_image
 
     def generate_beam_image(self, uv_coordinates):
-        """
-        Generate the beam image using UV coordinates.
-
-        Parameters:
-        - uv_coordinates: Array of (u, v) pairs (spatial frequency coordinates).
-
-        Returns:
-        - beam_image: Synthesized beam image from the UV coverage.
-        """
         ft_beam_image = np.zeros(
             (self.image_size, self.image_size), dtype=complex)
         image_center = np.array((self.image_size // 2, self.image_size // 2))
@@ -645,13 +647,16 @@ class TelescopeApp:
         if self.mode_var.get() != "EHT":
             return
 
+        if event.xdata is None or event.ydata is None:
+            print("Click occurred outside the axes or on an invalid area.")
+            return
+
         lon, lat = event.xdata, event.ydata
 
         lat = np.clip(lat, -90, 90)
         lon = ((lon + 180) % 360) - 180
 
         self.source_lon = lon
-
         self.declination_var.set(lat)
 
         self.update_results()
