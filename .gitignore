@@ -3,3 +3,5 @@ models/
 fits/
 .DS_Store
 __pycache__/
+galaxy10.h5
+*.pth
