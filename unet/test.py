@@ -1,4 +1,3 @@
-import skimage.metrics
 import h5py
 import numpy as np
 import torch
@@ -10,19 +9,20 @@ from PIL import Image
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
+import skimage.metrics
 import ehtim as eh
-
 from ehtim_helper import modify_telescope_positions
+
+TEST_TYPE = "galaxy"
 
 
 def generate_dirty(image):
-    eht = eh.array.load_txt('arrays/EHT2017.txt')
+    eht = eh.array.load_txt('../arrays/EHT2017.txt')
 
     new_positions = []
     eht = modify_telescope_positions(eht, new_positions)
 
     image = np.array(image)
-    # image = image.unsqueeze(0)
     test_image = np.dot(image[..., :3], [0.299, 0.587, 0.114])
 
     eht_fov = 200 * eh.RADPERUAS
@@ -43,11 +43,9 @@ def generate_dirty(image):
 
     obs = im.observe(eht, tint_sec, tadv_sec, tstart_hr, tstop_hr, bw_hz,
                      sgrscat=False, ampcal=True, phasecal=True,
-                     ttype='direct', verbose=True)
+                     ttype='direct', verbose=False)
 
-    fov = 200 * eh.RADPERUAS
-    dim = obs.dirtyimage(
-        test_image.shape[0], fov).imarr()
+    dim = obs.dirtyimage(eht_size, eht_fov).imarr()
     return dim
 
 
@@ -142,7 +140,13 @@ class UNetModel(nn.Module):
         return output
 
 
+def normalize_negative_one(img):
+    normalized_input = (img - np.amin(img)) / (np.amax(img) - np.amin(img))
+    return 2 * normalized_input - 1
+
+
 transform = transforms.Compose([
+    transforms.Grayscale(),
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.5], std=[0.5])
 ])
@@ -150,68 +154,69 @@ transform = transforms.Compose([
 model = UNetModel(in_channels=1, out_channels=1, channels=64,
                   num_pool_layers=4, drop_prob=0.2)
 
-TEST_TYPE = "galaxy"
+with h5py.File('galaxy10.h5', 'r') as f:
+    images = np.array(f['images'])
 
-if TEST_TYPE == "galaxy":
-    with h5py.File('galaxy10.h5', 'r') as f:
-        images = np.array(f['images'])
+NUM_IMAGES = 5
 
-    idx = np.random.randint(3000, images.shape[0])
+indices = np.random.choice(range(2000, len(images)), NUM_IMAGES, replace=True)
+selected_images = images[indices]
 
-    test_image = images[idx]
+ssim_scores = []
+mse_scores = []
 
+fig, axes = plt.subplots(NUM_IMAGES, 3)
+fig.set_size_inches(10, 8)
+
+axes[0, 0].set_title("Ground Truth", fontsize=12)
+axes[0, 1].set_title("Dirty Image", fontsize=12)
+axes[0, 2].set_title("Prediction", fontsize=12)
+
+for ax_row in axes:
+    for ax in ax_row:
+        ax.axis("off")
+
+batch_images = []
+batch_dims = []
+
+for test_image in tqdm(selected_images):
     dim = generate_dirty(test_image)
 
-    test_image = Image.fromarray(test_image)
-    test_image = transform(test_image)
-    dim = Image.fromarray(dim)
-    dim = transform(dim)
-elif TEST_TYPE == "model":
-    test_image = np.array(Image.open("models/RIAF.png").resize((69, 69)))
-    dim = generate_dirty(test_image)
+    test_image = transform(Image.fromarray(test_image))
+    dim = transform(Image.fromarray(dim))
 
-    test_image = Image.fromarray(test_image)
-    test_image = transform(test_image)
-    dim = Image.fromarray(dim)
-    dim = transform(dim)
-else:
-    raise ValueError("Invalid TEST_TYPE")
+    batch_images.append(test_image)
+    batch_dims.append(dim)
+
+batch_images = torch.stack(batch_images)
+batch_dims = torch.stack(batch_dims)
 
 model.load_state_dict(torch.load("unet_galaxy10.pth", weights_only=True))
 model.eval()
-pred = model(dim.unsqueeze(0))
+preds = model(batch_dims)
 
-pred = pred.detach().numpy()
-test_image = test_image.detach().numpy()
+preds = preds.detach().numpy()
+batch_images = batch_images.detach().numpy()
 
+for i, (test_image, dim, pred) in enumerate(zip(batch_images, batch_dims, preds)):
+    test_image = normalize_negative_one(test_image)
+    pred = normalize_negative_one(pred)
 
-def normalize_negative_one(img):
-    normalized_input = (img - np.amin(img)) / (np.amax(img) - np.amin(img))
-    return 2*normalized_input - 1
+    ssim = skimage.metrics.structural_similarity(
+        test_image[0], pred[0], data_range=2)
+    mse = skimage.metrics.mean_squared_error(
+        test_image[0], pred[0])
 
+    ssim_scores.append(ssim)
+    mse_scores.append(mse)
 
-test_imag = normalize_negative_one(test_image)
-pred = normalize_negative_one(pred)
+    axes[i, 0].imshow(test_image[0], cmap="hot")
+    axes[i, 1].imshow(dim[0], cmap="hot")
+    axes[i, 2].imshow(pred[0], cmap="hot")
 
+avg_ssim = np.mean(ssim_scores)
+avg_mse = np.mean(mse_scores)
 
-print(test_image[0].max(), test_image[0].min())
-print(pred[0].max(), pred[0].min())
-
-# rpint SSIM and MSE between images
-ssim = skimage.metrics.structural_similarity(
-    test_image[0], pred[0][0], data_range=2)
-
-mse = skimage.metrics.mean_squared_error(
-    test_image[0], pred[0][0])
-
-print(f"SSIM: {ssim}, MSE: {mse}")
-# set size
-fig, ax = plt.subplots(1, 3)
-fig.set_size_inches(8, 5)
-ax[0].set_title("Ground Truth")
-ax[0].imshow(test_image[0])
-ax[1].set_title("Dirty Image")
-ax[1].imshow(dim[0])
-ax[2].set_title("Prediction")
-ax[2].imshow(pred[0][0])
+print(f"Average SSIM: {avg_ssim}, Average MSE: {avg_mse}")
 plt.show()
+
