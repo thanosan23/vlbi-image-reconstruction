@@ -219,4 +219,3 @@ avg_mse = np.mean(mse_scores)
 
 print(f"Average SSIM: {avg_ssim}, Average MSE: {avg_mse}")
 plt.show()
-
