@@ -9,8 +9,137 @@ from scipy.ndimage import gaussian_filter
 from mpl_toolkits.basemap import Basemap
 import datetime
 from astropy.io import fits
+import h5py
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torchvision import transforms
+import skimage.metrics
+import ehtim as eh
+import matplotlib.pyplot as plt
+import ehtim as eh
+from PIL import Image
+import numpy as np
+from pyproj import Proj, Transformer
 
 from telescope import TelescopeArray
+
+geodetic = Proj(proj='latlong', datum='WGS84')
+ecef = Proj(proj='latlong', datum='WGS84',
+            lat_0=0, lon_0=0, x_0=0, y_0=0, z_0=0)
+
+transformer = Transformer.from_proj(geodetic, ecef)
+
+
+def latlon_to_ecef(lat, lon, alt=0):
+    x, y, z = transformer.transform(lon, lat, alt)
+    return x, y, z
+
+
+def modify_telescope_positions(eht, new_positions):
+    for telescope_name, lat, lon, alt in new_positions:
+        x, y, z = latlon_to_ecef(lat, lon, alt)
+
+        idx = np.where(eht.tarr['site'] == telescope_name)[0]
+        if len(idx) > 0:
+            eht.tarr[idx[0]]['x'] = x
+            eht.tarr[idx[0]]['y'] = y
+            eht.tarr[idx[0]]['z'] = z
+        else:
+            print(f"Warning: Telescope '{
+                  telescope_name}' not found in the array.")
+    return eht
+
+
+class ConvBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, drop_prob):
+        super().__init__()
+        self.layers = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=3,
+                      padding=1, bias=False),
+            nn.InstanceNorm2d(out_channels),
+            nn.LeakyReLU(negative_slope=0.2, inplace=True),
+            nn.Dropout2d(drop_prob),
+            nn.Conv2d(out_channels, out_channels, kernel_size=3,
+                      padding=1, bias=False),
+            nn.InstanceNorm2d(out_channels),
+            nn.LeakyReLU(negative_slope=0.2, inplace=True),
+            nn.Dropout2d(drop_prob),
+        )
+
+    def forward(self, input):
+        return self.layers(input)
+
+
+class TransposeConvBlock(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.layers = nn.Sequential(
+            nn.ConvTranspose2d(in_channels, out_channels,
+                               kernel_size=2, stride=2, bias=False),
+            nn.InstanceNorm2d(out_channels),
+            nn.LeakyReLU(negative_slope=0.2, inplace=True),
+        )
+
+    def forward(self, input):
+        return self.layers(input)
+
+
+class UNetModel(nn.Module):
+    def __init__(self, in_channels, out_channels, channels, num_pool_layers,
+                 drop_prob):
+        super().__init__()
+        self.down_sample_layers = nn.ModuleList(
+            [ConvBlock(in_channels, channels, drop_prob)])
+        ch = channels
+        for i in range(num_pool_layers - 1):
+            self.down_sample_layers += [ConvBlock(ch, ch * 2, drop_prob)]
+            ch *= 2
+        self.conv = ConvBlock(ch, ch * 2, drop_prob)
+
+        self.up_transpose_conv = nn.ModuleList()
+        self.up_conv = nn.ModuleList()
+        for i in range(num_pool_layers - 1):
+            self.up_transpose_conv += [TransposeConvBlock(ch * 2, ch)]
+            self.up_conv += [ConvBlock(ch * 2, ch, drop_prob)]
+            ch //= 2
+
+        self.up_transpose_conv += [TransposeConvBlock(ch * 2, ch)]
+        self.up_conv += [
+            nn.Sequential(
+                ConvBlock(ch * 2, ch, drop_prob),
+                nn.Conv2d(ch, out_channels, kernel_size=1, stride=1),
+            )
+        ]
+
+    def forward(self, input):
+        stack = []
+        output = input
+
+        for layer in self.down_sample_layers:
+            output = layer(output)
+            stack.append(output)
+            output = nn.functional.avg_pool2d(
+                output, kernel_size=2, stride=2, padding=0)
+
+        output = self.conv(output)
+
+        for transpose_conv, conv in zip(self.up_transpose_conv, self.up_conv):
+            downsample_layer = stack.pop()
+            output = transpose_conv(output)
+
+            padding = [0, 0, 0, 0]
+            if output.shape[-1] != downsample_layer.shape[-1]:
+                padding[1] = 1
+            if output.shape[-2] != downsample_layer.shape[-2]:
+                padding[3] = 1
+            if sum(padding) != 0:
+                output = nn.functional.pad(output, padding, "reflect")
+
+            output = torch.cat([output, downsample_layer], dim=1)
+            output = conv(output)
+
+        return output
 
 
 class TelescopeApp:
@@ -28,6 +157,17 @@ class TelescopeApp:
         self.clean_gamma = 0.1
         self.clean_threshold = 0.1
         self.start_time = datetime.datetime.now()
+
+        self.eht = None
+
+        self.eht = eh.array.load_txt('arrays/EHT2017.txt')
+
+        self.new_positions = []
+        self.eht = modify_telescope_positions(self.eht, self.new_positions)
+
+        self.dirty_image = None
+        self.beam_image = None
+
 
         self.mode_var = tk.StringVar(value="VLA")
         self.wavelength_var = tk.DoubleVar(value=self.wavelength)
@@ -54,7 +194,25 @@ class TelescopeApp:
 
         self.setup_plots(plot_panel)
 
+
+        self.model = UNetModel(in_channels=1, out_channels=1, channels=64,
+                                num_pool_layers=4, drop_prob=0.2)
+        self.model.load_state_dict(torch.load("./unet/unet_galaxy10_2.pth", weights_only=True))
+        self.model.eval()
+
+        self.transform = transforms.Compose([
+            transforms.Grayscale(),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5], std=[0.5])
+        ])
+
+        self.eht_fov = 200 * eh.RADPERUAS
+
         self.load_sky_image("models/double_wide.png")
+
+
+        self.ax_unet = None
+
         self.update_results()
 
     def setup_telescope_management(self, parent):
@@ -108,6 +266,9 @@ class TelescopeApp:
                 self.telescope_array.lat_lon = np.vstack([
                     self.telescope_array.lat_lon, new_lat_lon
                 ])
+            self.new_positions.append((new_name, new_lat_lon[0], new_lat_lon[1], 0.0)) 
+            self.eht = modify_telescope_positions(self.eht, self.new_positions)
+
             self.telescope_array.compute_baselines()
             self.update_telescope_list()
             self.update_results()
@@ -129,10 +290,15 @@ class TelescopeApp:
                 print("Cannot remove the last VLA telescope")
         else:
             if len(self.telescope_array.names) > 1:
+                telescope_name = self.telescope_array.names[idx]
                 self.telescope_array.names.pop(idx)
                 self.telescope_array.lat_lon = np.delete(
                     self.telescope_array.lat_lon, idx, axis=0)
+
+                self.new_positions = [pos for pos in self.new_positions if pos[0] != telescope_name]
+
                 self.telescope_array.compute_baselines()
+                self.telescope_array.names.pop(idx)
             else:
                 print("Cannot remove the last EHT telescope")
 
@@ -271,7 +437,7 @@ class TelescopeApp:
             self.ax_model_fft = self.fig.add_subplot(335)
             self.ax_dirty = self.fig.add_subplot(336)
             self.ax_clean = self.fig.add_subplot(337)
-
+            self.ax_unet = self.fig.add_subplot(338)
             self.plot_earth_map()
         else:
             self.ax_array = self.fig.add_subplot(331)
@@ -310,6 +476,7 @@ class TelescopeApp:
         return mode
 
     def load_sky_image(self, image_path):
+        self.eht_image = self.load_image(image_path) 
         if image_path.endswith(".fits"):
             img_data = fits.getdata(image_path)
 
@@ -506,6 +673,73 @@ class TelescopeApp:
         m.drawparallels(np.arange(-90., 91., 30.), labels=[1, 0, 0, 0])
         m.drawmeridians(np.arange(-180., 181., 60.), labels=[0, 0, 0, 1])
 
+
+    def load_image(self, image_path):
+        if image_path.lower().endswith('.fits'):
+            im = eh.image.load_image(image_path)
+        elif image_path.lower().endswith(('.png', '.jpg', '.jpeg')):
+            img = Image.open(image_path).convert('L')
+            img = img.resize((69, 69), Image.LANCZOS) 
+            img_array = np.array(img)
+
+            normalized_img = img_array / 255.0
+            total_flux = 1.0
+            eht_size = img_array.shape[0]
+
+            im_array = normalized_img * total_flux / normalized_img.sum()
+
+            im = eh.image.Image(
+                im_array,
+                psize=self.eht_fov / eht_size,
+                ra=0.0,
+                dec=0.0,
+                rf=230e9,
+                source='SyntheticImage'
+            )
+        else:
+            raise ValueError(f"Unsupported file format: {image_path}")
+
+        return im
+
+
+    def generate_eht_image(self, im, eht, tint_sec, tadv_sec, tstart_hr, tstop_hr, bw_hz, npix=69,
+                    ttype='fast'):
+
+        obs = im.observe(eht, tint_sec, tadv_sec, tstart_hr, tstop_hr, bw_hz,
+                        sgrscat=False, ampcal=True, phasecal=True, ttype=ttype)
+
+        fov = 200 * eh.RADPERUAS
+
+        dim = obs.dirtyimage(npix, fov)
+        dbeam = obs.dirtybeam(npix, fov)
+        cbeam = obs.cleanbeam(npix, fov)
+
+        dim_array = dim.imarr()
+        dbeam_array = dbeam.imarr()
+        cbeam_array = cbeam.imarr()
+
+        zbl = im.total_flux()
+
+        prior_fwhm = 100 * eh.RADPERUAS
+        emptyprior = eh.image.make_square(obs, npix, fov)
+        gaussprior = emptyprior.add_gauss(zbl, (prior_fwhm, prior_fwhm, 0, 0, 0))
+
+        data_term = {'vis': 1}
+        reg_term = {'tv2': 1, 'l1': 0.1}
+
+        imgr = eh.imager.Imager(obs, gaussprior, prior_im=gaussprior, flux=zbl,
+                                data_term=data_term, reg_term=reg_term,
+                                norm_reg=True,
+                                epsilon_tv=1.e-10,
+                                maxit=250, ttype=ttype)
+        imgr.make_image_I(show_updates=False)
+
+        out = imgr.out_last()
+        out = out.imarr()
+
+        return out, dim_array, dbeam_array, cbeam_array
+
+
     def update_results(self):
         self.update_parameters()
         try:
@@ -530,14 +764,44 @@ class TelescopeApp:
                     return
 
             self.telescope_array.wavelength = self.wavelength_var.get() / 1000
+            tint_sec = 60
+            tadv_sec = 600
+            tstart_hr = 0
+            tstop_hr = 24
+            bw_hz = 4.e9
 
-            self.dirty_image = self.generate_dirty_image(uv_coordinates)
-            self.beam_image = self.generate_beam_image(uv_coordinates)
-            self.clean_image, _, _, _ = self.clean(
-                self.dirty_image,
-                self.beam_image,
-                max_iterations=10000
-            )
+            if self.mode_var.get() == "EHT":
+                if self.eht is not None:
+                    out, dim, dbeam, cbeam = self.generate_eht_image(self.eht_image, self.eht, tint_sec, tadv_sec, tstart_hr, tstop_hr, bw_hz)
+                    self.dirty_image = dim
+                    self.beam_image = dbeam
+                    self.clean_image = out
+
+                    test_image = Image.fromarray(self.dirty_image)
+                    test_image = self.transform(test_image)
+                    self.model.eval()
+                    with torch.no_grad():
+                        pred = self.model(test_image.reshape(1, 69, 69).unsqueeze(0)).squeeze(0).squeeze(0).numpy()
+                    print(pred.shape)
+            else:
+                self.dirty_image = self.generate_dirty_image(uv_coordinates)
+                self.beam_image = self.generate_beam_image(uv_coordinates)
+
+                self.clean_image, _, _, _ = self.clean(
+                    self.dirty_image,
+                    self.beam_image,
+                    max_iterations=10000
+                )
+
+
+            if self.mode_var.get() == "EHT":
+                if self.ax_unet is not None:
+                    self.ax_unet.clear()
+                    self.ax_unet.imshow(pred, cmap='hot', extent=[
+                        -self.eht_fov / 2, self.eht_fov / 2, -self.eht_fov / 2, self.eht_fov / 2])
+                    self.ax_unet.set_title("UNet Output")
+                    self.ax_unet.set_xlabel('x (µas)')
+                    self.ax_unet.set_ylabel('y (µas)')
 
             self.update_plots(uv_coordinates)
 

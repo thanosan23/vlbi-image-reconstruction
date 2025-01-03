@@ -19,12 +19,12 @@ class Galaxy10Dataset(Dataset):
         with h5py.File(hdf5_file, 'r') as f:
             self.images = np.array(f['images'])
             self.labels = np.array(f['ans'])
-        self.images = self.images[:1000]
+        self.images = self.images[:3000]
         self.new_images = []
         self.outputs = []
         self.transform = transform
 
-        eht = eh.array.load_txt('arrays/EHT2017.txt')
+        eht = eh.array.load_txt('../arrays/EHT2017.txt')
 
         new_positions = []
         eht = modify_telescope_positions(eht, new_positions)
@@ -48,8 +48,8 @@ class Galaxy10Dataset(Dataset):
             tstop_hr = 24
             bw_hz = 4.e9
 
-            obs = im.observe(eht, tint_sec, tadv_sec, tstart_hr, tstop_hr, bw_hz,
-                             sgrscat=False, ampcal=True, phasecal=True,
+            obs = im.observe(eht, tint_sec, tadv_sec, tstart_hr, tstop_hr,
+                             bw_hz, sgrscat=False, ampcal=True, phasecal=True,
                              ttype='direct', verbose=False)
 
             fov = 200 * eh.RADPERUAS
@@ -176,7 +176,7 @@ model = UNetModel(in_channels=1, out_channels=1, channels=64,
 criterion = nn.MSELoss()
 optimizer = optim.Adam(model.parameters(), lr=3e-5)
 
-epochs = 100
+epochs = 250
 for epoch in range(epochs):
     model.train()
     epoch_loss = 0
@@ -195,9 +195,10 @@ for epoch in range(epochs):
         epoch_loss += loss.item()
 
     print(
-        f"Epoch {epoch + 1}/{epochs}, Loss: {epoch_loss / len(dataloader):.4f}")
+        f"Epoch {epoch + 1}/{epochs}, Loss: {epoch_loss / len(dataloader):.4f}"
+    )
 
-torch.save(model.state_dict(), 'unet_galaxy10.pth')
+torch.save(model.state_dict(), 'unet_galaxy10_2.pth')
 
 model.eval()
 dirty_image, test_data = next(iter(dataloader))

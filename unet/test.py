@@ -157,24 +157,16 @@ model = UNetModel(in_channels=1, out_channels=1, channels=64,
 with h5py.File('galaxy10.h5', 'r') as f:
     images = np.array(f['images'])
 
-NUM_IMAGES = 5
+NUM_IMAGES = 3
 
-indices = np.random.choice(range(2000, len(images)), NUM_IMAGES, replace=True)
+indices = np.random.choice(range(4000, len(images)), NUM_IMAGES, replace=True)
 selected_images = images[indices]
 
 ssim_scores = []
 mse_scores = []
+psnr_scores = []
 
-fig, axes = plt.subplots(NUM_IMAGES, 3)
-fig.set_size_inches(10, 8)
-
-axes[0, 0].set_title("Ground Truth", fontsize=12)
-axes[0, 1].set_title("Dirty Image", fontsize=12)
-axes[0, 2].set_title("Prediction", fontsize=12)
-
-for ax_row in axes:
-    for ax in ax_row:
-        ax.axis("off")
+fig, axes = plt.subplots(NUM_IMAGES, 3, figsize=(10, 8))
 
 batch_images = []
 batch_dims = []
@@ -190,8 +182,9 @@ for test_image in tqdm(selected_images):
 
 batch_images = torch.stack(batch_images)
 batch_dims = torch.stack(batch_dims)
+print(batch_images.shape)
 
-model.load_state_dict(torch.load("unet_galaxy10.pth", weights_only=True))
+model.load_state_dict(torch.load("unet_galaxy10_2.pth", weights_only=True))
 model.eval()
 preds = model(batch_dims)
 
@@ -202,21 +195,42 @@ for i, (test_image, dim, pred) in enumerate(zip(batch_images, batch_dims, preds)
     test_image = normalize_negative_one(test_image)
     pred = normalize_negative_one(pred)
 
+    eht_fov = 200 * eh.RADPERUAS
+
+    axes[i, 0].imshow(test_image[0], cmap="hot", extent=[
+        -eht_fov / 2, eht_fov / 2, -eht_fov / 2, eht_fov / 2])
+    axes[i, 1].imshow(batch_dims[i][0], cmap="hot", extent=[
+        -eht_fov / 2, eht_fov / 2, -eht_fov / 2, eht_fov / 2])
+    axes[i, 2].imshow(preds[i][0], cmap="hot", extent=[
+        -eht_fov / 2, eht_fov / 2, -eht_fov / 2, eht_fov / 2])
+
+    axes[i, 0].set_title("Ground Truth", fontsize=12)
+    axes[i, 1].set_title("Dirty Image", fontsize=12)
+    axes[i, 2].set_title("Prediction", fontsize=12)
+    axes[i, 0].set_xlabel('x (µas)')
+    axes[i, 0].set_ylabel('y (µas)')
+    axes[i, 1].set_xlabel('x (µas)')
+    axes[i, 1].set_ylabel('y (µas)')
+    axes[i, 2].set_xlabel('x (µas)')
+    axes[i, 2].set_ylabel('y (µas)')
+
     ssim = skimage.metrics.structural_similarity(
         test_image[0], pred[0], data_range=2)
     mse = skimage.metrics.mean_squared_error(
         test_image[0], pred[0])
 
+    psnr = skimage.metrics.peak_signal_noise_ratio(
+        test_image[0], pred[0])
+
     ssim_scores.append(ssim)
     mse_scores.append(mse)
-
-    axes[i, 0].imshow(test_image[0], cmap="hot")
-    axes[i, 1].imshow(dim[0], cmap="hot")
-    axes[i, 2].imshow(pred[0], cmap="hot")
+    psnr_scores.append(psnr)
 
 avg_ssim = np.mean(ssim_scores)
 avg_mse = np.mean(mse_scores)
+avg_psnr = np.mean(psnr_scores)
 
-print(f"Average SSIM: {avg_ssim}, Average MSE: {avg_mse}")
+print(f"Average SSIM: {avg_ssim}, Average PSNR: {
+      avg_psnr}, Average MSE: {avg_mse}")
+plt.tight_layout()
 plt.show()
-
