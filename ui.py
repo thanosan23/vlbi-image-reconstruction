@@ -9,19 +9,14 @@ from scipy.ndimage import gaussian_filter
 from mpl_toolkits.basemap import Basemap
 import datetime
 from astropy.io import fits
-import h5py
 import torch
 import torch.nn as nn
-import torch.optim as optim
 from torchvision import transforms
-import skimage.metrics
 import ehtim as eh
-import matplotlib.pyplot as plt
 import ehtim as eh
 from PIL import Image
 import numpy as np
 from pyproj import Proj, Transformer
-import astropy.time as at
 from telescope import TelescopeArray
 
 geodetic = Proj(proj='latlong', datum='WGS84')
@@ -181,7 +176,7 @@ class TelescopeApp:
         self.clean_threshold_var = tk.DoubleVar(value=self.clean_threshold)
         self.time_var = tk.StringVar(
             value=self.start_time.strftime("%Y-%m-%d %H:%M:%S"))
-        self.duration_var = tk.DoubleVar(value=12.0)
+        self.duration_var = tk.DoubleVar(value=24.0)
 
         self.telescope_array = TelescopeArray(mode="VLA")
 
@@ -201,7 +196,7 @@ class TelescopeApp:
 
         self.model = UNetModel(in_channels=1, out_channels=1, channels=64,
                                 num_pool_layers=4, drop_prob=0.2)
-        self.model.load_state_dict(torch.load("./unet/unet_galaxy10.pth"))
+        self.model.load_state_dict(torch.load("./unet/unet_galaxy10.pth", weights_only=True))
         self.model.eval()
 
         self.transform = transforms.Compose([
@@ -211,6 +206,7 @@ class TelescopeApp:
 
         self.eht_fov = 200 * eh.RADPERUAS
 
+        self.file_path = "models/double_wide.png"
         self.load_sky_image("models/double_wide.png")
 
 
@@ -245,6 +241,7 @@ class TelescopeApp:
                 title="Select Array Configuration",
                 filetypes=[("Config files", "*.config")]
             )
+            self.file_path = file_path
             if file_path:
                 new_positions = self.telescope_array.parse_config_file(
                     file_path)
@@ -270,7 +267,8 @@ class TelescopeApp:
                     self.telescope_array.lat_lon, new_lat_lon
                 ])
             self.new_positions.append((new_name, new_lat_lon[0], new_lat_lon[1], 0.0)) 
-            self.eht = modify_telescope_positions(self.eht, self.new_positions)
+            # self.eht = modify_telescope_positions(self.eht, self.new_positions)
+            self.eht.add_site(new_name, (new_lat_lon[0], new_lat_lon[1], 0.0))
 
             self.telescope_array.compute_baselines()
             self.update_telescope_list()
@@ -302,6 +300,8 @@ class TelescopeApp:
 
                 self.telescope_array.compute_baselines()
                 self.telescope_array.names.pop(idx)
+
+                self.eht.remove_site(telescope_name)
             else:
                 print("Cannot remove the last EHT telescope")
 
@@ -344,10 +344,10 @@ class TelescopeApp:
 
         create_slider_with_label(
             array_frame, "Wavelength (mm):", self.wavelength_var, 0.01, 5)
-        create_slider_with_label(
-            array_frame, "Hour Angle:", self.hour_angle_var, -180, 180)
-        create_slider_with_label(
-            array_frame, "Declination:", self.declination_var, -90, 90)
+        # create_slider_with_label(
+        #     array_frame, "Hour Angle:", self.hour_angle_var, -180, 180)
+        # create_slider_with_label(
+        #     array_frame, "Declination:", self.declination_var, -90, 90)
         create_slider_with_label(
             array_frame, "Duration (hrs):", self.duration_var, 1, 96)
 
@@ -480,6 +480,7 @@ class TelescopeApp:
 
     def load_sky_image(self, image_path):
         self.eht_image = self.load_image(image_path) 
+
         if image_path.endswith(".fits"):
             img_data = fits.getdata(image_path)
 
@@ -680,6 +681,7 @@ class TelescopeApp:
 
 
     def load_image(self, image_path):
+
         if image_path.lower().endswith('.fits'):
             im = eh.image.load_image(image_path)
         elif image_path.lower().endswith(('.png', '.jpg', '.jpeg')):
@@ -696,8 +698,8 @@ class TelescopeApp:
             im = eh.image.Image(
                 im_array,
                 psize=self.eht_fov / eht_size,
-                ra=0.0,
-                dec=0.0,
+                ra=self.hour_angle_var.get(),
+                dec=self.declination_var.get(),
                 rf=230e9,
                 source='SyntheticImage'
             )
@@ -763,7 +765,7 @@ class TelescopeApp:
                     tstart_hr = 0 
                     tstop_hr = self.duration_var.get()
                     bw_hz = 4.e9
-                    data = self.eht.obsdata(0, 0, 230e9, bw_hz, tint_sec, tadv_sec, tstart_hr, tstop_hr)
+                    data = self.eht.obsdata(-self.hour_angle_var.get(), self.declination_var.get(), 230e9, bw_hz, tint_sec, tadv_sec, tstart_hr, tstop_hr)
                     u = []
                     v = []
                     for i in data.data:
@@ -781,6 +783,7 @@ class TelescopeApp:
 
             if self.mode_var.get() == "EHT":
                 if self.eht is not None:
+                    self.eht_image = self.load_image(self.file_path)
                     out, dim, dbeam, cbeam = self.generate_eht_image(self.eht_image, self.eht, tint_sec, tadv_sec, tstart_hr, self.duration_var.get(), bw_hz)
                     self.dirty_image = dim
                     self.beam_image = dbeam
@@ -898,6 +901,7 @@ class TelescopeApp:
     def load_new_image(self):
         file_path = filedialog.askopenfilename(
             filetypes=[("Image files", "*.png *.jpg *.jpeg *.fits")])
+        self.file_path = file_path
         if file_path:
             self.load_sky_image(file_path)
             self.update_results()
@@ -930,6 +934,7 @@ class TelescopeApp:
         lat = np.clip(lat, -90, 90)
         lon = ((lon + 180) % 360) - 180
 
+        self.hour_angle_var.set(-lon)
         self.source_lon = lon
         self.declination_var.set(lat)
 
