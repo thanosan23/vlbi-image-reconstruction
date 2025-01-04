@@ -25,7 +25,6 @@ ecef = Proj(proj='latlong', datum='WGS84',
 
 transformer = Transformer.from_proj(geodetic, ecef)
 
-
 def latlon_to_ecef(lat, lon, alt=0):
     x, y, z = transformer.transform(lon, lat, alt)
     return x, y, z
@@ -150,7 +149,7 @@ class TelescopeApp:
         main_container.pack(fill=tk.BOTH, expand=True)
 
         self.image_size = 256
-        self.wavelength = 0.001
+        self.wavelength = 1.33
         self.hour_angle = 45
         self.declination = 34.078745
         self.clean_gamma = 0.1
@@ -162,6 +161,8 @@ class TelescopeApp:
         self.eht = eh.array.load_txt('arrays/EHT2017.txt')
 
         self.new_positions = []
+        #TODO: add satellite telescope
+        # self.eht = self.eht.add_satellite_elements('sat')
         self.eht = modify_telescope_positions(self.eht, self.new_positions)
 
         self.dirty_image = None
@@ -212,6 +213,7 @@ class TelescopeApp:
 
         self.ax_unet = None
 
+        print(self.eht.tarr)
         self.update_results()
 
     def setup_telescope_management(self, parent):
@@ -268,8 +270,8 @@ class TelescopeApp:
                 ])
             self.new_positions.append((new_name, new_lat_lon[0], new_lat_lon[1], 0.0)) 
             # self.eht = modify_telescope_positions(self.eht, self.new_positions)
-            self.eht.add_site(new_name, (new_lat_lon[0], new_lat_lon[1], 0.0))
-
+            self.eht = self.eht.add_site(new_name, (new_lat_lon[0], new_lat_lon[1], 0.0))
+            print(self.eht.tarr)
             self.telescope_array.compute_baselines()
             self.update_telescope_list()
             self.update_results()
@@ -280,6 +282,7 @@ class TelescopeApp:
         if not selection:
             return
 
+        print(selection, self.telescope_array.names)
         idx = selection[0]
 
         if self.mode_var.get() == "VLA":
@@ -290,18 +293,21 @@ class TelescopeApp:
             else:
                 print("Cannot remove the last VLA telescope")
         else:
-            if len(self.telescope_array.names) > 1:
+            if len(self.telescope_array.names) > 2:
                 telescope_name = self.telescope_array.names[idx]
-                self.telescope_array.names.pop(idx)
+                if idx == len(self.telescope_array.names) - 1: 
+                    self.telescope_array.names.pop()
+                else:
+                    self.telescope_array.names.pop(idx)
                 self.telescope_array.lat_lon = np.delete(
                     self.telescope_array.lat_lon, idx, axis=0)
 
                 self.new_positions = [pos for pos in self.new_positions if pos[0] != telescope_name]
 
                 self.telescope_array.compute_baselines()
-                self.telescope_array.names.pop(idx)
 
-                self.eht.remove_site(telescope_name)
+                self.eht = self.eht.remove_site(telescope_name)
+                print(self.eht.tarr)
             else:
                 print("Cannot remove the last EHT telescope")
 
@@ -695,12 +701,14 @@ class TelescopeApp:
 
             im_array = normalized_img * total_flux / normalized_img.sum()
 
+            freq = ((2.998*10e8)/(self.wavelength_var.get() * 10e-3))
+
             im = eh.image.Image(
                 im_array,
                 psize=self.eht_fov / eht_size,
                 ra=self.hour_angle_var.get(),
                 dec=self.declination_var.get(),
-                rf=230e9,
+                rf=freq,
                 source='SyntheticImage'
             )
         else:
@@ -765,7 +773,9 @@ class TelescopeApp:
                     tstart_hr = 0 
                     tstop_hr = self.duration_var.get()
                     bw_hz = 4.e9
-                    data = self.eht.obsdata(-self.hour_angle_var.get(), self.declination_var.get(), 230e9, bw_hz, tint_sec, tadv_sec, tstart_hr, tstop_hr)
+                    freq = ((2.998*10e8)/(self.wavelength_var.get()))
+                    print("Anayzing at frequency: ", freq)
+                    data = self.eht.obsdata(-self.hour_angle_var.get(), self.declination_var.get(), freq, bw_hz, tint_sec, tadv_sec, tstart_hr, tstop_hr)
                     u = []
                     v = []
                     for i in data.data:
