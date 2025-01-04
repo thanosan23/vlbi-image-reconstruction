@@ -21,7 +21,7 @@ import ehtim as eh
 from PIL import Image
 import numpy as np
 from pyproj import Proj, Transformer
-
+import astropy.time as at
 from telescope import TelescopeArray
 
 geodetic = Proj(proj='latlong', datum='WGS84')
@@ -50,6 +50,9 @@ def modify_telescope_positions(eht, new_positions):
                   telescope_name}' not found in the array.")
     return eht
 
+def normalize_negative_one(img):
+    normalized_input = (img - np.amin(img)) / (np.amax(img) - np.amin(img))
+    return 2 * normalized_input - 1
 
 class ConvBlock(nn.Module):
     def __init__(self, in_channels, out_channels, drop_prob):
@@ -142,6 +145,7 @@ class UNetModel(nn.Module):
         return output
 
 
+
 class TelescopeApp:
     def __init__(self, root):
         self.root = root
@@ -197,11 +201,10 @@ class TelescopeApp:
 
         self.model = UNetModel(in_channels=1, out_channels=1, channels=64,
                                 num_pool_layers=4, drop_prob=0.2)
-        self.model.load_state_dict(torch.load("./unet/unet_galaxy10_2.pth", weights_only=True))
+        self.model.load_state_dict(torch.load("./unet/unet_galaxy10.pth"))
         self.model.eval()
 
         self.transform = transforms.Compose([
-            transforms.Grayscale(),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.5], std=[0.5])
         ])
@@ -346,7 +349,7 @@ class TelescopeApp:
         create_slider_with_label(
             array_frame, "Declination:", self.declination_var, -90, 90)
         create_slider_with_label(
-            array_frame, "Duration (hrs):", self.duration_var, 1, 24)
+            array_frame, "Duration (hrs):", self.duration_var, 1, 96)
 
         clean_frame = ttk.LabelFrame(
             parent, text="CLEAN Parameters", style='Modern.TLabelframe')
@@ -559,6 +562,8 @@ class TelescopeApp:
                     uv_coordinates.append((-u, -v))
 
         elif self.mode_var.get() == "EHT":
+            print(self.eht.data['u'])
+            print(self.eht.data['v'])
             for i in range(len(self.telescope_array.lat_lon)):
                 for j in range(i + 1, len(self.telescope_array.lat_lon)):
                     lat1, lon1 = self.telescope_array.lat_lon[i]
@@ -568,7 +573,7 @@ class TelescopeApp:
                     v = lat2 - lat1
                     uv_coordinates.append((u, v))
                     uv_coordinates.append((-u, -v))
-
+        print(uv_coordinates)
         return np.array(uv_coordinates)
 
     def clean(self, dirty_image, beam_image, max_iterations=100):
@@ -752,37 +757,49 @@ class TelescopeApp:
                 try:
                     start_time = datetime.datetime.strptime(
                         self.time_var.get(), "%Y-%m-%d %H:%M:%S")
-                    uv_coordinates = \
-                        self.telescope_array.calculate_uv_coordinates(
-                            None,
-                            self.declination_var.get(),
-                            start_time=start_time,
-                            duration=self.duration_var.get()
-                        )
+                    uv_coordinates = []
+                    tint_sec = 60
+                    tadv_sec = 600
+                    tstart_hr = 0 
+                    tstop_hr = self.duration_var.get()
+                    bw_hz = 4.e9
+                    data = self.eht.obsdata(0, 0, 230e9, bw_hz, tint_sec, tadv_sec, tstart_hr, tstop_hr)
+                    u = []
+                    v = []
+                    for i in data.data:
+                        u.append(i[6])
+                        v.append(i[7])
+                    u = np.array(u)
+                    v = np.array(v)
+
+                    uv_coordinates = np.column_stack((u, v))
                 except ValueError:
                     print("Invalid time format")
                     return
 
             self.telescope_array.wavelength = self.wavelength_var.get() / 1000
-            tint_sec = 60
-            tadv_sec = 600
-            tstart_hr = 0
-            tstop_hr = 24
-            bw_hz = 4.e9
 
             if self.mode_var.get() == "EHT":
                 if self.eht is not None:
-                    out, dim, dbeam, cbeam = self.generate_eht_image(self.eht_image, self.eht, tint_sec, tadv_sec, tstart_hr, tstop_hr, bw_hz)
+                    out, dim, dbeam, cbeam = self.generate_eht_image(self.eht_image, self.eht, tint_sec, tadv_sec, tstart_hr, self.duration_var.get(), bw_hz)
                     self.dirty_image = dim
                     self.beam_image = dbeam
                     self.clean_image = out
 
+                    self.dirty_image = normalize_negative_one(self.dirty_image)
                     test_image = Image.fromarray(self.dirty_image)
+                    test_image = test_image.transpose(Image.FLIP_LEFT_RIGHT)
                     test_image = self.transform(test_image)
                     self.model.eval()
                     with torch.no_grad():
                         pred = self.model(test_image.reshape(1, 69, 69).unsqueeze(0)).squeeze(0).squeeze(0).numpy()
-                    print(pred.shape)
+                        pred = normalize_negative_one(pred)
+                        self.ax_unet.clear()
+                        self.ax_unet.imshow(pred, cmap='hot', extent=[
+                            -self.eht_fov / 2, self.eht_fov / 2, -self.eht_fov / 2, self.eht_fov / 2])
+                        self.ax_unet.set_title("UNet Output")
+                        self.ax_unet.set_xlabel('x (µas)')
+                        self.ax_unet.set_ylabel('y (µas)')
             else:
                 self.dirty_image = self.generate_dirty_image(uv_coordinates)
                 self.beam_image = self.generate_beam_image(uv_coordinates)
@@ -794,14 +811,7 @@ class TelescopeApp:
                 )
 
 
-            if self.mode_var.get() == "EHT":
-                if self.ax_unet is not None:
-                    self.ax_unet.clear()
-                    self.ax_unet.imshow(pred, cmap='hot', extent=[
-                        -self.eht_fov / 2, self.eht_fov / 2, -self.eht_fov / 2, self.eht_fov / 2])
-                    self.ax_unet.set_title("UNet Output")
-                    self.ax_unet.set_xlabel('x (µas)')
-                    self.ax_unet.set_ylabel('y (µas)')
+
 
             self.update_plots(uv_coordinates)
 
@@ -809,8 +819,9 @@ class TelescopeApp:
             print(f"Error updating results: {e}")
 
     def update_plots(self, uv_coordinates):
+
         axes_to_clear = [self.ax_model, self.ax_beam, self.ax_uv,
-                         self.ax_model_fft, self.ax_dirty, self.ax_clean]
+                        self.ax_model_fft, self.ax_dirty, self.ax_clean]
         if self.mode_var.get() == "VLA":
             axes_to_clear.append(self.ax_array)
 
@@ -881,7 +892,6 @@ class TelescopeApp:
         self.ax_model_fft.set_ylabel("Position (parsecs)")
 
         self.fig.subplots_adjust(hspace=0.4, wspace=0.4)
-
         self.fig.tight_layout()
         self.canvas.draw()
 
