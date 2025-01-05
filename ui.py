@@ -178,6 +178,8 @@ class TelescopeApp:
         self.dirty_image = None
         self.beam_image = None
 
+        self.selected_telescope = None
+
         self.mode_var = tk.StringVar(value="VLA")
         self.wavelength_var = tk.DoubleVar(value=self.wavelength)
         self.hour_angle_var = tk.DoubleVar(value=self.hour_angle)
@@ -188,12 +190,14 @@ class TelescopeApp:
             value=self.start_time.strftime("%Y-%m-%d %H:%M:%S"))
         self.duration_var = tk.DoubleVar(value=24.0)
 
+        self.edit_source_position_var = tk.BooleanVar(value=False)
+
         self.telescope_array = TelescopeArray(mode="VLA")
 
         self.telescope_list = None
 
         control_panel = ttk.Frame(main_container)
-        control_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+        control_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=False, padx=5, pady=5)
 
         self.setup_control_sections(control_panel)
         self.setup_telescope_management(control_panel)
@@ -413,6 +417,8 @@ class TelescopeApp:
         ttk.Button(telescope_management, text="Add Telescope", command=self.add_telescope).pack(side=tk.LEFT, pady=5, padx=3)
         ttk.Button(telescope_management, text="Remove Selected", command=self.remove_telescope).pack(side=tk.LEFT, pady=5, padx=3)
 
+        ttk.Checkbutton(telescope_management, text="Edit Source Position", variable=self.edit_source_position_var).pack(side=tk.LEFT, padx=5, pady=5)
+
         model_frame = ttk.Frame(scrollable_frame)
         model_frame.pack(fill=tk.X, pady=10, padx=5)
         ttk.Button(model_frame, text="Load Sky Image", command=self.load_new_image,
@@ -433,11 +439,13 @@ class TelescopeApp:
         self.eccentricity_var = tk.DoubleVar(value=0.0)
         self.inclination_var = tk.DoubleVar(value=0.0)
         self.arg_perigee_var = tk.DoubleVar(value=0.0)
+        self.long_ascending_var = tk.DoubleVar(value=0.0)
 
         create_slider_with_label(self.satellite_frame, "Period (days):", self.period_days_var, 0.1, 10)
         create_slider_with_label(self.satellite_frame, "Eccentricity:", self.eccentricity_var, 0.0, 1.0)
         create_slider_with_label(self.satellite_frame, "Inclination:", self.inclination_var, 0.0, 180.0)
         create_slider_with_label(self.satellite_frame, "Arg Perigee:", self.arg_perigee_var, 0.0, 180.0)
+        create_slider_with_label(self.satellite_frame, "Long Ascending:", self.long_ascending_var, 0.0, 360.0)
 
     def set_time(self):
         current_time = datetime.datetime.strptime(
@@ -1014,25 +1022,27 @@ class TelescopeApp:
             if self.telescope_array.select_telescope(event):
                 self.update_plots(self.calculate_current_uv())
         elif event.inaxes == self.ax_map and self.mode_var.get() == "EHT":
-            x, y = event.xdata, event.ydata
-            self.new_x = x
-            self.new_y = y
-            nearest_telescope, min_distance = None, 15
-            telescopes = []
-            for item in self.eht.tarr:
-                telescopes.append((item[0], *TelescopeConfig.ecef_to_lat_lon(item[1], item[2], item[3])))
-            print(x, y)
-            print(telescopes)
-            for name, ty, tx in telescopes:
-                print(name, ty, tx)
-                distance = ((x - tx) ** 2 + (y - ty) ** 2) ** 0.5
-                if distance < min_distance:
-                    nearest_telescope = name
-                    min_distance = distance
-            if nearest_telescope:
-                self.selected_telescope = nearest_telescope
-            print(self.selected_telescope)
-            # self.on_map_click(event)
+            if self.edit_source_position_var.get() == True:
+                self.on_map_click(event)
+            else:
+                x, y = event.xdata, event.ydata
+                self.new_x = x
+                self.new_y = y
+                nearest_telescope, min_distance = None, 15
+                telescopes = []
+                for item in self.eht.tarr:
+                    telescopes.append((item[0], *TelescopeConfig.ecef_to_lat_lon(item[1], item[2], item[3])))
+                print(x, y)
+                print(telescopes)
+                for name, ty, tx in telescopes:
+                    print(name, ty, tx)
+                    distance = ((x - tx) ** 2 + (y - ty) ** 2) ** 0.5
+                    if distance < min_distance:
+                        nearest_telescope = name
+                        min_distance = distance
+                if nearest_telescope:
+                    self.selected_telescope = nearest_telescope
+                print(self.selected_telescope)
 
     def on_mouse_motion(self, event):
         if event.inaxes and event.button == 1:
@@ -1040,11 +1050,11 @@ class TelescopeApp:
                 if self.telescope_array.move_telescope(event):
                     print("Motion", event)
                     self.update_plots(self.calculate_current_uv())
-            elif event.inaxes == self.ax_map and self.mode_var.get() == "EHT":
+            elif event.inaxes == self.ax_map and self.mode_var.get() == "EHT" and self.edit_source_position_var.get() == False:
                 self.new_x, self.new_y = event.xdata, event.ydata
 
     def on_mouse_release(self, event):
-        if event.inaxes == self.ax_map and self.mode_var.get() == "EHT":
+        if event.inaxes == self.ax_map and self.mode_var.get() == "EHT" and self.edit_source_position_var.get() == False:
             if self.selected_telescope is not None:
                 new_lat_lon = []
                 for i in range(len(self.telescope_array.names)):
