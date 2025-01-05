@@ -165,7 +165,7 @@ class TelescopeApp:
         self.hour_angle = 45
         self.declination = 34.078745
         self.clean_gamma = 0.1
-        self.clean_threshold = 0.1
+        self.clean_threshold = 0.0005
         self.start_time = datetime.datetime.now()
 
         self.eht = None
@@ -227,6 +227,7 @@ class TelescopeApp:
         self.load_sky_image("models/double_wide.png")
 
         self.ax_unet = None
+        self.ax_ehtim = None
 
         print(self.eht.tarr)
         self.update_results()
@@ -502,7 +503,8 @@ class TelescopeApp:
             self.ax_model_fft = self.fig.add_subplot(335)
             self.ax_dirty = self.fig.add_subplot(336)
             self.ax_clean = self.fig.add_subplot(337)
-            self.ax_unet = self.fig.add_subplot(338)
+            self.ax_ehtim = self.fig.add_subplot(338)
+            self.ax_unet = self.fig.add_subplot(339)
             self.plot_earth_map()
         else:
             self.ax_array = self.fig.add_subplot(331)
@@ -616,90 +618,6 @@ class TelescopeApp:
         beam_image = np.abs(ifftshift(ifft2(fftshift(ft_beam_image))))
         beam_image /= np.max(beam_image)
         return beam_image
-
-    def generate_uv_coverage(self):
-        uv_coordinates = []
-
-        if self.mode_var.get() == "VLA":
-            for i in range(len(self.telescope_array.positions)):
-                for j in range(i + 1, len(self.telescope_array.positions)):
-                    u = self.telescope_array.positions[j][0] - \
-                        self.telescope_array.positions[i][0]
-                    v = self.telescope_array.positions[j][1] - \
-                        self.telescope_array.positions[i][1]
-                    uv_coordinates.append((u, v))
-                    uv_coordinates.append((-u, -v))
-
-        elif self.mode_var.get() == "EHT":
-            print(self.eht.data['u'])
-            print(self.eht.data['v'])
-            for i in range(len(self.telescope_array.lat_lon)):
-                for j in range(i + 1, len(self.telescope_array.lat_lon)):
-                    lat1, lon1 = self.telescope_array.lat_lon[i]
-                    lat2, lon2 = self.telescope_array.lat_lon[j]
-
-                    u = lon2 - lon1
-                    v = lat2 - lat1
-                    uv_coordinates.append((u, v))
-                    uv_coordinates.append((-u, -v))
-        print(uv_coordinates)
-        return np.array(uv_coordinates)
-
-    def clean(self, dirty_image, beam_image, max_iterations=100):
-        cleaned = np.zeros_like(dirty_image)
-        residual = dirty_image.copy()
-
-        beam_max = np.max(beam_image)
-        beam_image = beam_image / beam_max
-        beam_center = np.array(beam_image.shape) // 2
-
-        components = []
-
-        for iteration in range(max_iterations):
-            max_pos = np.unravel_index(
-                np.argmax(np.abs(residual)), residual.shape)
-            max_val = residual[max_pos]
-
-            if np.abs(max_val) < self.clean_threshold:
-                break
-
-            components.append((max_pos, max_val * self.clean_gamma))
-
-            y_start = max_pos[0] - beam_center[0]
-            y_end = y_start + beam_image.shape[0]
-            x_start = max_pos[1] - beam_center[1]
-            x_end = x_start + beam_image.shape[1]
-
-            y_slice = slice(max(0, y_start), min(residual.shape[0], y_end))
-            x_slice = slice(max(0, x_start), min(residual.shape[1], x_end))
-            beam_y_slice = slice(
-                max(0, -y_start), min(beam_image.shape[0], residual.shape[0] - y_start))
-            beam_x_slice = slice(
-                max(0, -x_start), min(beam_image.shape[1], residual.shape[1] - x_start))
-
-            residual[y_slice, x_slice] -= max_val * self.clean_gamma * \
-                beam_image[beam_y_slice, beam_x_slice]
-
-        clean_beam = gaussian_filter(beam_image, sigma=0.001)
-        clean_beam /= np.max(clean_beam)
-
-        for (pos, amp) in components:
-            y_start = pos[0] - beam_center[0]
-            y_end = y_start + clean_beam.shape[0]
-            x_start = pos[1] - beam_center[1]
-            x_end = x_start + clean_beam.shape[1]
-
-            y_slice = slice(max(0, y_start), min(cleaned.shape[0], y_end))
-            x_slice = slice(max(0, x_start), min(cleaned.shape[1], x_end))
-            beam_y_slice = slice(
-                max(0, -y_start), min(clean_beam.shape[0], cleaned.shape[0] - y_start))
-            beam_x_slice = slice(
-                max(0, -x_start), min(clean_beam.shape[1], cleaned.shape[1] - x_start))
-
-            cleaned[y_slice, x_slice] += amp * \
-                clean_beam[beam_y_slice, beam_x_slice]
-
-        return cleaned, components, residual, clean_beam
 
     def plot_earth_map(self):
         if not hasattr(self, 'ax_map'):
@@ -861,7 +779,40 @@ class TelescopeApp:
                         self.eht_image, self.eht, tint_sec, tadv_sec, tstart_hr, self.duration_var.get(), bw_hz, mjd=mjd_now)
                     self.dirty_image = dim
                     self.beam_image = dbeam
-                    self.clean_image = out
+
+                    self.ehtim_output = out
+                    self.ax_ehtim.clear()
+                    self.ax_ehtim.set_title("Ehtim Output")
+                    self.ax_ehtim.set_xlabel('x (parsecs)')
+                    self.ax_ehtim.set_ylabel('y (parsecs)')
+
+                    fov_parsecs = (206265000 * (self.wavelength_var.get() * 1000) /
+                                np.max(np.abs(uv_coordinates))) / 3.086e16
+
+                    self.ax_ehtim.imshow(out, cmap='hot', extent=[
+                        -fov_parsecs / 2, fov_parsecs / 2, -fov_parsecs / 2, fov_parsecs / 2])
+
+                    max_iterations = 100000000
+                    gain = self.clean_gamma_var.get()
+                    threshold = self.clean_threshold_var.get()
+                    residual = self.dirty_image.copy()
+                    clean_image = np.zeros_like(self.dirty_image)
+                    psf = self.beam_image
+
+                    for i in range(max_iterations):
+                        max_val = np.max(residual)
+                        if max_val < threshold:
+                            break
+                        max_pos = np.unravel_index(np.argmax(residual), residual.shape)
+                        clean_image[max_pos] += gain * max_val
+                        psf_shifted = np.roll(np.roll(psf, max_pos[0] - psf.shape[0] // 2, axis=0), max_pos[1] - psf.shape[1] // 2, axis=1)
+                        residual -= gain * max_val * psf_shifted
+
+                    # clean_beam = cbeam
+                    # clean_beam_centered = fftshift(clean_beam)
+                    # clean_image_convolved = np.real(ifft2(fft2(clean_image) * fft2(clean_beam_centered)))
+                    # self.clean_image = clean_image_convolved + residual
+                    self.clean_image = clean_image + residual
 
                     self.dirty_image = normalize_negative_one(self.dirty_image)
                     test_image = Image.fromarray(self.dirty_image)
@@ -874,19 +825,31 @@ class TelescopeApp:
                         pred = normalize_negative_one(pred)
                         self.ax_unet.clear()
                         self.ax_unet.imshow(pred, cmap='hot', extent=[
-                            -self.eht_fov / 2, self.eht_fov / 2, -self.eht_fov / 2, self.eht_fov / 2])
+                            -fov_parsecs / 2, fov_parsecs / 2, -fov_parsecs / 2, fov_parsecs / 2])
                         self.ax_unet.set_title("UNet Output")
-                        self.ax_unet.set_xlabel('x (µas)')
-                        self.ax_unet.set_ylabel('y (µas)')
+                        self.ax_unet.set_xlabel('x (parsecs)')
+                        self.ax_unet.set_ylabel('y (parsecs)')
             else:
                 self.dirty_image = self.generate_dirty_image(uv_coordinates)
                 self.beam_image = self.generate_beam_image(uv_coordinates)
 
-                self.clean_image, _, _, _ = self.clean(
-                    self.dirty_image,
-                    self.beam_image,
-                    max_iterations=10000
-                )
+                max_iterations = 10000
+                gain = self.clean_gamma_var.get()
+                threshold = self.clean_threshold_var.get()
+                residual = self.dirty_image.copy()
+                clean_image = np.zeros_like(self.dirty_image)
+                psf = self.beam_image
+
+                for i in range(max_iterations):
+                    max_val = np.max(residual)
+                    if max_val < threshold:
+                        break
+                    max_pos = np.unravel_index(np.argmax(residual), residual.shape)
+                    clean_image[max_pos] += gain * max_val
+                    psf_shifted = np.roll(np.roll(psf, max_pos[0] - psf.shape[0] // 2, axis=0), max_pos[1] - psf.shape[1] // 2, axis=1)
+                    residual -= gain * max_val * psf_shifted
+
+                self.clean_image = clean_image
 
             self.update_plots(uv_coordinates)
 
