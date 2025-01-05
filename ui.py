@@ -22,17 +22,23 @@ from PIL import Image
 import numpy as np
 from pyproj import Proj, Transformer
 from telescope import TelescopeArray
+from config import TelescopeConfig
 
 geodetic = Proj(proj='latlong', datum='WGS84')
 ecef = Proj(proj='latlong', datum='WGS84',
             lat_0=0, lon_0=0, x_0=0, y_0=0, z_0=0)
 
 transformer = Transformer.from_proj(geodetic, ecef)
+transformer2 = Transformer.from_proj(ecef, geodetic)
 
 
 def latlon_to_ecef(lat, lon, alt=0):
     x, y, z = transformer.transform(lon, lat, alt)
     return x, y, z
+
+def ecef_to_latlon(x, y, z):
+    lon, lat, alt = transformer2.transform(x, y, z, radians=False)
+    return lat, lon
 
 
 def modify_telescope_positions(eht, new_positions):
@@ -187,7 +193,7 @@ class TelescopeApp:
         self.telescope_list = None
 
         control_panel = ttk.Frame(main_container)
-        control_panel.pack(side=tk.LEFT, fill=tk.Y, padx=5, pady=5)
+        control_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
 
         self.setup_control_sections(control_panel)
         self.setup_telescope_management(control_panel)
@@ -280,7 +286,6 @@ class TelescopeApp:
                 eccentricity = self.eccentricity_var.get()
                 inclination = self.inclination_var.get()
                 arg_perigee = self.arg_perigee_var.get()
-                long_ascending = self.long_ascending_var.get()
 
                 self.eht = self.eht.add_satellite_elements(
                     new_name,
@@ -288,7 +293,6 @@ class TelescopeApp:
                     eccentricity=eccentricity,
                     inclination=inclination,
                     arg_perigee=arg_perigee,
-                    long_ascending=long_ascending
                 )
             else:
                 self.eht = self.eht.add_site(
@@ -337,39 +341,39 @@ class TelescopeApp:
 
         self.update_telescope_list()
         self.update_results()
-
+    
     def setup_control_sections(self, parent):
         style = ttk.Style()
         style.configure('Modern.TLabelframe', padding=10)
         style.configure('Modern.TButton', padding=5)
         style.configure('Horizontal.TScale', background='#f0f0f0')
 
-        # Create a frame to hold the canvas and scrollbar
-        container = ttk.Frame(parent)
-        container.pack(fill=tk.BOTH, expand=True)
+        main_frame = ttk.Frame(parent)
+        main_frame.pack(fill=tk.BOTH, expand=True)
 
-        # Create the canvas for scrollable content
-        control_canvas = tk.Canvas(container)
-        control_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        control_frame = ttk.Frame(main_frame)
+        control_frame.pack(expand=True, fill=tk.BOTH)
+        
+        x_scrollbar = ttk.Scrollbar(control_frame, orient="horizontal")
+        x_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
 
-        # Create the scrollbar and link it to the canvas
-        scrollbar = ttk.Scrollbar(container, orient="vertical", command=control_canvas.yview)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        y_scrollbar = ttk.Scrollbar(control_frame, orient="vertical")
+        y_scrollbar.pack(side=tk.LEFT, fill=tk.Y)
 
-        # Configure the canvas to work with the scrollbar
-        control_canvas.configure(yscrollcommand=scrollbar.set)
+        control_canvas = tk.Canvas(control_frame, yscrollcommand=y_scrollbar.set, xscrollcommand=x_scrollbar.set)
+        control_canvas.pack(fill=tk.BOTH, expand=True)
 
-        # Create a frame inside the canvas for the scrollable content
-        scrollable_frame = ttk.Frame(control_canvas)
+        y_scrollbar.config(command=control_canvas.yview)
+        x_scrollbar.config(command=control_canvas.xview)
+
+        scrollable_frame = ttk.Frame(control_canvas, padding=10)
+        control_canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+
         scrollable_frame.bind(
             "<Configure>",
             lambda e: control_canvas.configure(scrollregion=control_canvas.bbox("all"))
         )
 
-        # Add the scrollable frame to the canvas
-        control_canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-
-        # Begin adding widgets to the scrollable frame
         mode_frame = ttk.LabelFrame(scrollable_frame, text="Array Mode", style='Modern.TLabelframe')
         mode_frame.pack(fill=tk.X, pady=(0, 10), padx=5)
 
@@ -420,7 +424,7 @@ class TelescopeApp:
         self.update_button.pack(fill=tk.X, pady=5)
 
         self.satellite_frame = ttk.LabelFrame(scrollable_frame, text="Satellite Parameters", style='Modern.TLabelframe')
-        self.satellite_frame.pack(fill=tk.X, pady=10, padx=5)
+        self.satellite_frame.pack(fill=tk.X, pady=10)
 
         self.add_satellite_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(self.satellite_frame, text="Add Satellite", variable=self.add_satellite_var).pack(side=tk.LEFT, padx=5, pady=5)
@@ -429,13 +433,11 @@ class TelescopeApp:
         self.eccentricity_var = tk.DoubleVar(value=0.0)
         self.inclination_var = tk.DoubleVar(value=0.0)
         self.arg_perigee_var = tk.DoubleVar(value=0.0)
-        self.long_ascending_var = tk.DoubleVar(value=0.0)
 
         create_slider_with_label(self.satellite_frame, "Period (days):", self.period_days_var, 0.1, 10)
         create_slider_with_label(self.satellite_frame, "Eccentricity:", self.eccentricity_var, 0.0, 1.0)
         create_slider_with_label(self.satellite_frame, "Inclination:", self.inclination_var, 0.0, 180.0)
         create_slider_with_label(self.satellite_frame, "Arg Perigee:", self.arg_perigee_var, 0.0, 180.0)
-        create_slider_with_label(self.satellite_frame, "Long Ascending:", self.long_ascending_var, 0.0, 360.0)
 
     def set_time(self):
         current_time = datetime.datetime.strptime(
@@ -517,7 +519,7 @@ class TelescopeApp:
         mode = self.mode_var.get()
 
         if mode == "EHT":
-            self.satellite_frame.pack(fill=tk.X)
+            self.satellite_frame.pack()
         else:
             self.satellite_frame.pack_forget()
 
@@ -709,6 +711,7 @@ class TelescopeApp:
         for name, (lat, lon) in zip(self.telescope_array.names,
                                     self.telescope_array.lat_lon):
             x, y = m(lon, lat)
+            print(lat, lon)
             m.plot(x, y, 'ro', markersize=6)
             self.ax_map.text(x + 2, y + 2, name, fontsize=8)
 
@@ -1006,31 +1009,59 @@ class TelescopeApp:
         self.update_results()
 
     def on_mouse_press(self, event):
+        print(event)
         if event.inaxes == self.ax_array and self.mode_var.get() == "VLA":
             if self.telescope_array.select_telescope(event):
                 self.update_plots(self.calculate_current_uv())
-        elif self.mode_var.get() == "EHT":
-            print("Press", event)
-            self.on_map_click(event)
+        elif event.inaxes == self.ax_map and self.mode_var.get() == "EHT":
+            x, y = event.xdata, event.ydata
+            self.new_x = x
+            self.new_y = y
+            nearest_telescope, min_distance = None, 15
+            telescopes = []
+            for item in self.eht.tarr:
+                telescopes.append((item[0], *TelescopeConfig.ecef_to_lat_lon(item[1], item[2], item[3])))
+            print(x, y)
+            print(telescopes)
+            for name, ty, tx in telescopes:
+                print(name, ty, tx)
+                distance = ((x - tx) ** 2 + (y - ty) ** 2) ** 0.5
+                if distance < min_distance:
+                    nearest_telescope = name
+                    min_distance = distance
+            if nearest_telescope:
+                self.selected_telescope = nearest_telescope
+            print(self.selected_telescope)
+            # self.on_map_click(event)
 
     def on_mouse_motion(self, event):
         if event.inaxes and event.button == 1:
-            if self.telescope_array.move_telescope(event):
-                print("Motion", event)
-                self.update_plots(self.calculate_current_uv())
+            if self.mode_var.get() == "VLA":
+                if self.telescope_array.move_telescope(event):
+                    print("Motion", event)
+                    self.update_plots(self.calculate_current_uv())
+            elif event.inaxes == self.ax_map and self.mode_var.get() == "EHT":
+                self.new_x, self.new_y = event.xdata, event.ydata
 
     def on_mouse_release(self, event):
-        if self.telescope_array.selected_telescope is not None:
-            self.telescope_array.selected_telescope = None
-            if self.mode_var.get() == "EHT":
-                print("Release", event)
-                print(self.telescope_array.selected_telescope)
-                new_positions = []
-                for name, (lat, lon) in zip(self.telescope_array.names, self.telescope_array.lat_lon):
-                    new_positions.append((name, lat, lon, 0.0))
-
+        if event.inaxes == self.ax_map and self.mode_var.get() == "EHT":
+            if self.selected_telescope is not None:
+                new_lat_lon = []
+                for i in range(len(self.telescope_array.names)):
+                    if self.telescope_array.names[i] == self.selected_telescope:
+                        new_lat_lon.append((self.new_y, self.new_x))
+                    else:
+                        new_lat_lon.append(self.telescope_array.lat_lon[i])
+                self.telescope_array.lat_lon = np.array(new_lat_lon)
+                print(self.telescope_array.lat_lon)
+                new_positions = [(self.selected_telescope, self.new_y, self.new_x, 0.0)]
+                print(new_positions)
                 self.eht = modify_telescope_positions(self.eht, new_positions)
-            self.update_results()
+                print(self.eht.tarr)
+                self.telescope_array.selected_telescope = None
+                self.selected_telescope = None
+                self.update_results()
+                self.plot_earth_map()
 
     def calculate_current_uv(self):
         mode = self.mode_var.get()
