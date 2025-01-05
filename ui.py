@@ -36,6 +36,7 @@ def latlon_to_ecef(lat, lon, alt=0):
     x, y, z = transformer.transform(lon, lat, alt)
     return x, y, z
 
+
 def ecef_to_latlon(x, y, z):
     lon, lat, alt = transformer2.transform(x, y, z, radians=False)
     return lat, lon
@@ -165,7 +166,7 @@ class TelescopeApp:
         self.hour_angle = 45
         self.declination = 34.078745
         self.clean_gamma = 0.1
-        self.clean_threshold = 0.0005
+        self.clean_threshold = 0.0002
         self.start_time = datetime.datetime.now()
 
         self.eht = None
@@ -197,7 +198,8 @@ class TelescopeApp:
         self.telescope_list = None
 
         control_panel = ttk.Frame(main_container)
-        control_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=False, padx=5, pady=5)
+        control_panel.pack(side=tk.LEFT, fill=tk.BOTH,
+                           expand=False, padx=5, pady=5)
 
         self.setup_control_sections(control_panel)
         self.setup_telescope_management(control_panel)
@@ -346,7 +348,7 @@ class TelescopeApp:
 
         self.update_telescope_list()
         self.update_results()
-    
+
     def setup_control_sections(self, parent):
         style = ttk.Style()
         style.configure('Modern.TLabelframe', padding=10)
@@ -358,28 +360,32 @@ class TelescopeApp:
 
         control_frame = ttk.Frame(main_frame)
         control_frame.pack(expand=True, fill=tk.BOTH)
-        
+
         x_scrollbar = ttk.Scrollbar(control_frame, orient="horizontal")
         x_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
 
         y_scrollbar = ttk.Scrollbar(control_frame, orient="vertical")
         y_scrollbar.pack(side=tk.LEFT, fill=tk.Y)
 
-        control_canvas = tk.Canvas(control_frame, yscrollcommand=y_scrollbar.set, xscrollcommand=x_scrollbar.set)
+        control_canvas = tk.Canvas(
+            control_frame, yscrollcommand=y_scrollbar.set, xscrollcommand=x_scrollbar.set)
         control_canvas.pack(fill=tk.BOTH, expand=True)
 
         y_scrollbar.config(command=control_canvas.yview)
         x_scrollbar.config(command=control_canvas.xview)
 
         scrollable_frame = ttk.Frame(control_canvas, padding=10)
-        control_canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        control_canvas.create_window(
+            (0, 0), window=scrollable_frame, anchor="nw")
 
         scrollable_frame.bind(
             "<Configure>",
-            lambda e: control_canvas.configure(scrollregion=control_canvas.bbox("all"))
+            lambda e: control_canvas.configure(
+                scrollregion=control_canvas.bbox("all"))
         )
 
-        mode_frame = ttk.LabelFrame(scrollable_frame, text="Array Mode", style='Modern.TLabelframe')
+        mode_frame = ttk.LabelFrame(
+            scrollable_frame, text="Array Mode", style='Modern.TLabelframe')
         mode_frame.pack(fill=tk.X, pady=(0, 10), padx=5)
 
         self.mode_var = tk.StringVar(value=self.current_mode)
@@ -388,7 +394,8 @@ class TelescopeApp:
         ttk.Radiobutton(mode_frame, text="EHT", variable=self.mode_var, value="EHT",
                         command=self.change_mode).pack(side=tk.LEFT, padx=20, pady=5)
 
-        array_frame = ttk.LabelFrame(scrollable_frame, text="Array Parameters", style='Modern.TLabelframe')
+        array_frame = ttk.LabelFrame(
+            scrollable_frame, text="Array Parameters", style='Modern.TLabelframe')
         array_frame.pack(fill=tk.X, pady=(0, 10), padx=5)
 
         def create_slider_with_label(frame, label_text, variable, from_, to):
@@ -398,43 +405,56 @@ class TelescopeApp:
             value_label = ttk.Label(slider_frame, text=f"{variable.get():.2f}")
             value_label.pack(side=tk.RIGHT, padx=5)
             slider = ttk.Scale(slider_frame, from_=from_, to=to, variable=variable,
-                            orient=tk.HORIZONTAL, command=lambda v: value_label.config(text=f"{float(v):.2f}"))
+                               orient=tk.HORIZONTAL, command=lambda v: value_label.config(text=f"{float(v):.2f}"))
             slider.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=5)
 
-        create_slider_with_label(array_frame, "Wavelength (mm):", self.wavelength_var, 0.01, 5)
-        create_slider_with_label(array_frame, "Duration (hrs):", self.duration_var, 1, 96)
+        create_slider_with_label(
+            array_frame, "Wavelength (mm):", self.wavelength_var, 0.01, 5)
+        create_slider_with_label(
+            array_frame, "Duration (hrs):", self.duration_var, 1, 96)
 
-        clean_frame = ttk.LabelFrame(scrollable_frame, text="CLEAN Parameters", style='Modern.TLabelframe')
+        clean_frame = ttk.LabelFrame(
+            scrollable_frame, text="CLEAN Parameters", style='Modern.TLabelframe')
         clean_frame.pack(fill=tk.X, pady=(0, 10), padx=5)
 
-        create_slider_with_label(clean_frame, "Loop Gain:", self.clean_gamma_var, 0.01, 1.0)
-        create_slider_with_label(clean_frame, "Threshold:", self.clean_threshold_var, 0.0001, 1)
+        create_slider_with_label(
+            clean_frame, "Loop Gain:", self.clean_gamma_var, 0.01, 1.0)
+        create_slider_with_label(
+            clean_frame, "Threshold:", self.clean_threshold_var, 0.0001, 0.001)
 
-        telescope_management = ttk.LabelFrame(scrollable_frame, text="Telescope Management", style='Modern.TLabelframe')
+        telescope_management = ttk.LabelFrame(
+            scrollable_frame, text="Telescope Management", style='Modern.TLabelframe')
         telescope_management.pack(fill=tk.X, pady=10, padx=5)
-        self.telescope_listbox = tk.Listbox(telescope_management, height=10, width=30)
+        self.telescope_listbox = tk.Listbox(
+            telescope_management, height=10, width=30)
         self.telescope_listbox.pack(pady=5, padx=3)
 
-        ttk.Button(telescope_management, text="Add Telescope", command=self.add_telescope).pack(side=tk.LEFT, pady=5, padx=3)
-        ttk.Button(telescope_management, text="Remove Selected", command=self.remove_telescope).pack(side=tk.LEFT, pady=5, padx=3)
+        ttk.Button(telescope_management, text="Add Telescope",
+                   command=self.add_telescope).pack(side=tk.LEFT, pady=5, padx=3)
+        ttk.Button(telescope_management, text="Remove Selected",
+                   command=self.remove_telescope).pack(side=tk.LEFT, pady=5, padx=3)
 
-        ttk.Checkbutton(telescope_management, text="Edit Source Position", variable=self.edit_source_position_var).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Checkbutton(telescope_management, text="Edit Source Position",
+                        variable=self.edit_source_position_var).pack(side=tk.LEFT, padx=5, pady=5)
 
         model_frame = ttk.Frame(scrollable_frame)
         model_frame.pack(fill=tk.X, pady=10, padx=5)
         ttk.Button(model_frame, text="Load Sky Image", command=self.load_new_image,
-                style='Modern.TButton').pack(fill=tk.X, pady=5)
+                   style='Modern.TButton').pack(fill=tk.X, pady=5)
 
         update_frame = ttk.Frame(scrollable_frame)
         update_frame.pack(fill=tk.X, pady=10, padx=5)
-        self.update_button = ttk.Button(update_frame, text="Update Results", command=self.update_results, style='Modern.TButton')
+        self.update_button = ttk.Button(
+            update_frame, text="Update Results", command=self.update_results, style='Modern.TButton')
         self.update_button.pack(fill=tk.X, pady=5)
 
-        self.satellite_frame = ttk.LabelFrame(scrollable_frame, text="Satellite Parameters", style='Modern.TLabelframe')
+        self.satellite_frame = ttk.LabelFrame(
+            scrollable_frame, text="Satellite Parameters", style='Modern.TLabelframe')
         self.satellite_frame.pack(fill=tk.X, pady=10)
 
         self.add_satellite_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(self.satellite_frame, text="Add Satellite", variable=self.add_satellite_var).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Checkbutton(self.satellite_frame, text="Add Satellite",
+                        variable=self.add_satellite_var).pack(side=tk.LEFT, padx=5, pady=5)
 
         self.period_days_var = tk.DoubleVar(value=1.0)
         self.eccentricity_var = tk.DoubleVar(value=0.0)
@@ -442,11 +462,16 @@ class TelescopeApp:
         self.arg_perigee_var = tk.DoubleVar(value=0.0)
         self.long_ascending_var = tk.DoubleVar(value=0.0)
 
-        create_slider_with_label(self.satellite_frame, "Period (days):", self.period_days_var, 0.1, 10)
-        create_slider_with_label(self.satellite_frame, "Eccentricity:", self.eccentricity_var, 0.0, 1.0)
-        create_slider_with_label(self.satellite_frame, "Inclination:", self.inclination_var, 0.0, 180.0)
-        create_slider_with_label(self.satellite_frame, "Arg Perigee:", self.arg_perigee_var, 0.0, 180.0)
-        create_slider_with_label(self.satellite_frame, "Long Ascending:", self.long_ascending_var, 0.0, 360.0)
+        create_slider_with_label(
+            self.satellite_frame, "Period (days):", self.period_days_var, 0.1, 10)
+        create_slider_with_label(
+            self.satellite_frame, "Eccentricity:", self.eccentricity_var, 0.0, 1.0)
+        create_slider_with_label(
+            self.satellite_frame, "Inclination:", self.inclination_var, 0.0, 180.0)
+        create_slider_with_label(
+            self.satellite_frame, "Arg Perigee:", self.arg_perigee_var, 0.0, 180.0)
+        create_slider_with_label(
+            self.satellite_frame, "Long Ascending:", self.long_ascending_var, 0.0, 360.0)
 
     def set_time(self):
         current_time = datetime.datetime.strptime(
@@ -787,7 +812,7 @@ class TelescopeApp:
                     self.ax_ehtim.set_ylabel('y (parsecs)')
 
                     fov_parsecs = (206265000 * (self.wavelength_var.get() * 1000) /
-                                np.max(np.abs(uv_coordinates))) / 3.086e16
+                                   np.max(np.abs(uv_coordinates))) / 3.086e16
 
                     self.ax_ehtim.imshow(out, cmap='hot', extent=[
                         -fov_parsecs / 2, fov_parsecs / 2, -fov_parsecs / 2, fov_parsecs / 2])
@@ -799,13 +824,17 @@ class TelescopeApp:
                     clean_image = np.zeros_like(self.dirty_image)
                     psf = self.beam_image
 
+                    print(np.max(residual), np.min(residual))
+
                     for i in range(max_iterations):
                         max_val = np.max(residual)
                         if max_val < threshold:
                             break
-                        max_pos = np.unravel_index(np.argmax(residual), residual.shape)
+                        max_pos = np.unravel_index(
+                            np.argmax(residual), residual.shape)
                         clean_image[max_pos] += gain * max_val
-                        psf_shifted = np.roll(np.roll(psf, max_pos[0] - psf.shape[0] // 2, axis=0), max_pos[1] - psf.shape[1] // 2, axis=1)
+                        psf_shifted = np.roll(np.roll(
+                            psf, max_pos[0] - psf.shape[0] // 2, axis=0), max_pos[1] - psf.shape[1] // 2, axis=1)
                         residual -= gain * max_val * psf_shifted
 
                     # clean_beam = cbeam
@@ -844,9 +873,11 @@ class TelescopeApp:
                     max_val = np.max(residual)
                     if max_val < threshold:
                         break
-                    max_pos = np.unravel_index(np.argmax(residual), residual.shape)
+                    max_pos = np.unravel_index(
+                        np.argmax(residual), residual.shape)
                     clean_image[max_pos] += gain * max_val
-                    psf_shifted = np.roll(np.roll(psf, max_pos[0] - psf.shape[0] // 2, axis=0), max_pos[1] - psf.shape[1] // 2, axis=1)
+                    psf_shifted = np.roll(np.roll(
+                        psf, max_pos[0] - psf.shape[0] // 2, axis=0), max_pos[1] - psf.shape[1] // 2, axis=1)
                     residual -= gain * max_val * psf_shifted
 
                 self.clean_image = clean_image
@@ -994,7 +1025,8 @@ class TelescopeApp:
                 nearest_telescope, min_distance = None, 15
                 telescopes = []
                 for item in self.eht.tarr:
-                    telescopes.append((item[0], *TelescopeConfig.ecef_to_lat_lon(item[1], item[2], item[3])))
+                    telescopes.append(
+                        (item[0], *TelescopeConfig.ecef_to_lat_lon(item[1], item[2], item[3])))
                 print(x, y)
                 print(telescopes)
                 for name, ty, tx in telescopes:
@@ -1027,7 +1059,8 @@ class TelescopeApp:
                         new_lat_lon.append(self.telescope_array.lat_lon[i])
                 self.telescope_array.lat_lon = np.array(new_lat_lon)
                 print(self.telescope_array.lat_lon)
-                new_positions = [(self.selected_telescope, self.new_y, self.new_x, 0.0)]
+                new_positions = [
+                    (self.selected_telescope, self.new_y, self.new_x, 0.0)]
                 print(new_positions)
                 self.eht = modify_telescope_positions(self.eht, new_positions)
                 print(self.eht.tarr)
