@@ -145,6 +145,7 @@ class TelescopeArray:
         if self.selected_telescope is not None:
             self.positions[self.selected_telescope] = [
                 event.xdata, event.ydata]
+            print("Moved telescope", self.selected_telescope, "to", event.xdata, event.ydata)
             self.compute_baselines()
             return True
         return False
