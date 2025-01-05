@@ -192,6 +192,9 @@ class TelescopeApp:
         self.setup_control_sections(control_panel)
         self.setup_telescope_management(control_panel)
 
+        if self.current_mode == "VLA":
+            self.satellite_frame.pack_forget()
+
         plot_panel = ttk.Frame(main_container)
         plot_panel.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
@@ -271,8 +274,6 @@ class TelescopeApp:
                     [self.telescope_array.lat_lon, new_lat_lon])
             self.new_positions.append(
                 (new_name, new_lat_lon[0], new_lat_lon[1], 0.0))
-            self.eht = self.eht.add_site(
-                new_name, (new_lat_lon[0], new_lat_lon[1], 0.0))
 
             if self.add_satellite_var.get():
                 period_days = self.period_days_var.get()
@@ -289,6 +290,9 @@ class TelescopeApp:
                     arg_perigee=arg_perigee,
                     long_ascending=long_ascending
                 )
+            else:
+                self.eht = self.eht.add_site(
+                    new_name, (new_lat_lon[0], new_lat_lon[1], 0.0))
 
             print(self.eht.tarr)
             self.telescope_array.compute_baselines()
@@ -340,27 +344,33 @@ class TelescopeApp:
         style.configure('Modern.TButton', padding=5)
         style.configure('Horizontal.TScale', background='#f0f0f0')
 
-        control_canvas = tk.Canvas(parent)
-        scrollbar = ttk.Scrollbar(
-            parent, orient="vertical", command=control_canvas.yview)
-        scrollable_frame = ttk.Frame(control_canvas)
+        # Create a frame to hold the canvas and scrollbar
+        container = ttk.Frame(parent)
+        container.pack(fill=tk.BOTH, expand=True)
 
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: control_canvas.configure(
-                scrollregion=control_canvas.bbox("all")
-            )
-        )
+        # Create the canvas for scrollable content
+        control_canvas = tk.Canvas(container)
+        control_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        control_canvas.create_window(
-            (0, 0), window=scrollable_frame, anchor="nw")
+        # Create the scrollbar and link it to the canvas
+        scrollbar = ttk.Scrollbar(container, orient="vertical", command=control_canvas.yview)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Configure the canvas to work with the scrollbar
         control_canvas.configure(yscrollcommand=scrollbar.set)
 
-        control_canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
+        # Create a frame inside the canvas for the scrollable content
+        scrollable_frame = ttk.Frame(control_canvas)
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: control_canvas.configure(scrollregion=control_canvas.bbox("all"))
+        )
 
-        mode_frame = ttk.LabelFrame(
-            scrollable_frame, text="Array Mode", style='Modern.TLabelframe')
+        # Add the scrollable frame to the canvas
+        control_canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+
+        # Begin adding widgets to the scrollable frame
+        mode_frame = ttk.LabelFrame(scrollable_frame, text="Array Mode", style='Modern.TLabelframe')
         mode_frame.pack(fill=tk.X, pady=(0, 10), padx=5)
 
         self.mode_var = tk.StringVar(value=self.current_mode)
@@ -369,8 +379,7 @@ class TelescopeApp:
         ttk.Radiobutton(mode_frame, text="EHT", variable=self.mode_var, value="EHT",
                         command=self.change_mode).pack(side=tk.LEFT, padx=20, pady=5)
 
-        array_frame = ttk.LabelFrame(
-            scrollable_frame, text="Array Parameters", style='Modern.TLabelframe')
+        array_frame = ttk.LabelFrame(scrollable_frame, text="Array Parameters", style='Modern.TLabelframe')
         array_frame.pack(fill=tk.X, pady=(0, 10), padx=5)
 
         def create_slider_with_label(frame, label_text, variable, from_, to):
@@ -380,53 +389,41 @@ class TelescopeApp:
             value_label = ttk.Label(slider_frame, text=f"{variable.get():.2f}")
             value_label.pack(side=tk.RIGHT, padx=5)
             slider = ttk.Scale(slider_frame, from_=from_, to=to, variable=variable,
-                               orient=tk.HORIZONTAL, command=lambda v: value_label.config(text=f"{float(v):.2f}"))
+                            orient=tk.HORIZONTAL, command=lambda v: value_label.config(text=f"{float(v):.2f}"))
             slider.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=5)
 
-        create_slider_with_label(
-            array_frame, "Wavelength (mm):", self.wavelength_var, 0.01, 5)
-        create_slider_with_label(
-            array_frame, "Duration (hrs):", self.duration_var, 1, 96)
+        create_slider_with_label(array_frame, "Wavelength (mm):", self.wavelength_var, 0.01, 5)
+        create_slider_with_label(array_frame, "Duration (hrs):", self.duration_var, 1, 96)
 
-        clean_frame = ttk.LabelFrame(
-            scrollable_frame, text="CLEAN Parameters", style='Modern.TLabelframe')
+        clean_frame = ttk.LabelFrame(scrollable_frame, text="CLEAN Parameters", style='Modern.TLabelframe')
         clean_frame.pack(fill=tk.X, pady=(0, 10), padx=5)
 
-        create_slider_with_label(
-            clean_frame, "Loop Gain:", self.clean_gamma_var, 0.01, 1.0)
-        create_slider_with_label(
-            clean_frame, "Threshold:", self.clean_threshold_var, 0.0001, 1)
+        create_slider_with_label(clean_frame, "Loop Gain:", self.clean_gamma_var, 0.01, 1.0)
+        create_slider_with_label(clean_frame, "Threshold:", self.clean_threshold_var, 0.0001, 1)
 
-        telescope_management = ttk.LabelFrame(
-            scrollable_frame, text="Telescope Management", style='Modern.TLabelframe')
+        telescope_management = ttk.LabelFrame(scrollable_frame, text="Telescope Management", style='Modern.TLabelframe')
         telescope_management.pack(fill=tk.X, pady=10, padx=5)
-        self.telescope_listbox = tk.Listbox(
-            telescope_management, height=10, width=30)
+        self.telescope_listbox = tk.Listbox(telescope_management, height=10, width=30)
         self.telescope_listbox.pack(pady=5, padx=3)
 
-        ttk.Button(telescope_management, text="Add Telescope",
-                   command=self.add_telescope).pack(side=tk.LEFT, pady=5, padx=3)
-        ttk.Button(telescope_management, text="Remove Selected",
-                   command=self.remove_telescope).pack(side=tk.LEFT, pady=5, padx=3)
+        ttk.Button(telescope_management, text="Add Telescope", command=self.add_telescope).pack(side=tk.LEFT, pady=5, padx=3)
+        ttk.Button(telescope_management, text="Remove Selected", command=self.remove_telescope).pack(side=tk.LEFT, pady=5, padx=3)
 
         model_frame = ttk.Frame(scrollable_frame)
         model_frame.pack(fill=tk.X, pady=10, padx=5)
         ttk.Button(model_frame, text="Load Sky Image", command=self.load_new_image,
-                   style='Modern.TButton').pack(fill=tk.X, pady=5)
+                style='Modern.TButton').pack(fill=tk.X, pady=5)
 
         update_frame = ttk.Frame(scrollable_frame)
         update_frame.pack(fill=tk.X, pady=10, padx=5)
-        self.update_button = ttk.Button(
-            update_frame, text="Update Results", command=self.update_results, style='Modern.TButton')
+        self.update_button = ttk.Button(update_frame, text="Update Results", command=self.update_results, style='Modern.TButton')
         self.update_button.pack(fill=tk.X, pady=5)
 
-        self.satellite_frame = ttk.LabelFrame(
-            scrollable_frame, text="Satellite Parameters", style='Modern.TLabelframe')
+        self.satellite_frame = ttk.LabelFrame(scrollable_frame, text="Satellite Parameters", style='Modern.TLabelframe')
         self.satellite_frame.pack(fill=tk.X, pady=10, padx=5)
 
         self.add_satellite_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(self.satellite_frame, text="Add Satellite",
-                        variable=self.add_satellite_var).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Checkbutton(self.satellite_frame, text="Add Satellite", variable=self.add_satellite_var).pack(side=tk.LEFT, padx=5, pady=5)
 
         self.period_days_var = tk.DoubleVar(value=1.0)
         self.eccentricity_var = tk.DoubleVar(value=0.0)
@@ -434,16 +431,11 @@ class TelescopeApp:
         self.arg_perigee_var = tk.DoubleVar(value=0.0)
         self.long_ascending_var = tk.DoubleVar(value=0.0)
 
-        create_slider_with_label(
-            self.satellite_frame, "Period (days):", self.period_days_var, 0.1, 10)
-        create_slider_with_label(
-            self.satellite_frame, "Eccentricity:", self.eccentricity_var, 0.0, 1.0)
-        create_slider_with_label(
-            self.satellite_frame, "Inclination:", self.inclination_var, 0.0, 180.0)
-        create_slider_with_label(
-            self.satellite_frame, "Arg Perigee:", self.arg_perigee_var, 0.0, 180.0)
-        create_slider_with_label(
-            self.satellite_frame, "Long Ascending:", self.long_ascending_var, 0.0, 360.0)
+        create_slider_with_label(self.satellite_frame, "Period (days):", self.period_days_var, 0.1, 10)
+        create_slider_with_label(self.satellite_frame, "Eccentricity:", self.eccentricity_var, 0.0, 1.0)
+        create_slider_with_label(self.satellite_frame, "Inclination:", self.inclination_var, 0.0, 180.0)
+        create_slider_with_label(self.satellite_frame, "Arg Perigee:", self.arg_perigee_var, 0.0, 180.0)
+        create_slider_with_label(self.satellite_frame, "Long Ascending:", self.long_ascending_var, 0.0, 360.0)
 
     def set_time(self):
         current_time = datetime.datetime.strptime(
@@ -776,7 +768,7 @@ class TelescopeApp:
         return im
 
     def generate_eht_image(self, im, eht, tint_sec, tadv_sec, tstart_hr, tstop_hr, bw_hz, npix=69,
-                           ttype='fast', mjd=None):
+                           ttype='direct', mjd=None):
 
         obs = im.observe(eht, tint_sec, tadv_sec, tstart_hr, tstop_hr, bw_hz,
                          sgrscat=False, ampcal=True, phasecal=True, ttype=ttype, mjd=mjd,  no_elevcut_space=True,  dcal=True, add_th_noise=False)
