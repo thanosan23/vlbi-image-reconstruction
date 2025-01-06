@@ -5,3 +5,4 @@ fits/
 __pycache__/
 galaxy10.h5
 *.pth
+unet/blackhole/*

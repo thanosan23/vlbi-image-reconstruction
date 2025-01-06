@@ -23,6 +23,10 @@ import numpy as np
 from pyproj import Proj, Transformer
 from telescope import TelescopeArray
 from config import TelescopeConfig
+from pyhigh import get_elevation
+
+import requests
+import pandas as pd
 
 geodetic = Proj(proj='latlong', datum='WGS84')
 ecef = Proj(proj='latlong', datum='WGS84',
@@ -32,14 +36,21 @@ transformer = Transformer.from_proj(geodetic, ecef)
 transformer2 = Transformer.from_proj(ecef, geodetic)
 
 
+
+def get_elevation(lat, lon):
+    url = f"https://api.opentopodata.org/v1/aster30m?locations={lat},{lon}"
+    r = requests.get(url)
+    data = r.json()
+    elevation = data['results'][0]['elevation']
+    return elevation
+
+
+
+
 def latlon_to_ecef(lat, lon, alt=0):
     x, y, z = transformer.transform(lon, lat, alt)
     return x, y, z
 
-
-def ecef_to_latlon(x, y, z):
-    lon, lat, alt = transformer2.transform(x, y, z, radians=False)
-    return lat, lon
 
 
 def modify_telescope_positions(eht, new_positions):
@@ -199,7 +210,7 @@ class TelescopeApp:
 
         control_panel = ttk.Frame(main_container)
         control_panel.pack(side=tk.LEFT, fill=tk.BOTH,
-                           expand=False, padx=5, pady=5)
+                           expand=True)
 
         self.setup_control_sections(control_panel)
         self.setup_telescope_management(control_panel)
@@ -305,7 +316,6 @@ class TelescopeApp:
                 self.eht = self.eht.add_site(
                     new_name, (new_lat_lon[0], new_lat_lon[1], 0.0))
 
-            print(self.eht.tarr)
             self.telescope_array.compute_baselines()
             self.update_telescope_list()
             self.update_results()
@@ -361,20 +371,16 @@ class TelescopeApp:
         control_frame = ttk.Frame(main_frame)
         control_frame.pack(expand=True, fill=tk.BOTH)
 
-        x_scrollbar = ttk.Scrollbar(control_frame, orient="horizontal")
-        x_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
-
         y_scrollbar = ttk.Scrollbar(control_frame, orient="vertical")
         y_scrollbar.pack(side=tk.LEFT, fill=tk.Y)
 
         control_canvas = tk.Canvas(
-            control_frame, yscrollcommand=y_scrollbar.set, xscrollcommand=x_scrollbar.set)
+            control_frame, yscrollcommand=y_scrollbar.set, bg="#d9d9d9")
         control_canvas.pack(fill=tk.BOTH, expand=True)
 
         y_scrollbar.config(command=control_canvas.yview)
-        x_scrollbar.config(command=control_canvas.xview)
 
-        scrollable_frame = ttk.Frame(control_canvas, padding=10)
+        scrollable_frame = ttk.Frame(control_canvas)
         control_canvas.create_window(
             (0, 0), window=scrollable_frame, anchor="nw")
 
@@ -516,7 +522,7 @@ class TelescopeApp:
         ttk.Button(dialog, text="Apply", command=apply).pack(pady=10)
 
     def setup_plots(self, parent):
-        self.fig = Figure(figsize=(12, 8), dpi=100)
+        self.fig = Figure(figsize=(10, 8), dpi=80)
         self.canvas = FigureCanvasTkAgg(self.fig, parent)
         self.canvas.draw()
 
@@ -925,44 +931,44 @@ class TelescopeApp:
         self.ax_model.imshow(self.sky_image, cmap='hot', origin='lower',
                              extent=[-fov_parsecs / 2, fov_parsecs / 2, -fov_parsecs / 2, fov_parsecs / 2])
         self.ax_model.set_title("Model Image (Sky)")
-        self.ax_model.set_xlabel("Position (parsecs)")
-        self.ax_model.set_ylabel("Position (parsecs)")
+        self.ax_model.set_xlabel("x (parsecs)")
+        self.ax_model.set_ylabel("y (parsecs)")
 
-        self.ax_uv.scatter(uv_coordinates[:, 0], uv_coordinates[:, 1],
+        self.ax_uv.scatter(uv_coordinates[:, 0]/1e9, uv_coordinates[:, 1]/1e9,
                            c='blue', s=1, alpha=0.5)
-        self.ax_uv.scatter(-uv_coordinates[:, 0], -uv_coordinates[:, 1],
+        self.ax_uv.scatter(-uv_coordinates[:, 0]/1e9, -uv_coordinates[:, 1]/1e9,
                            c='red', s=1, alpha=0.5)
         self.ax_uv.set_title("UV Coverage")
-        self.ax_uv.set_xlabel("u (wavelengths)")
-        self.ax_uv.set_ylabel("v (wavelengths)")
+        self.ax_uv.set_xlabel("u (Gλ)")
+        self.ax_uv.set_ylabel("v (Gλ)")
         self.ax_uv.grid(True)
         self.ax_uv.axis('equal')
 
         self.ax_beam.imshow(self.beam_image, cmap='hot', origin='lower',
                             extent=[-fov_parsecs / 2, fov_parsecs / 2, -fov_parsecs / 2, fov_parsecs / 2])
         self.ax_beam.set_title("Beam Pattern (PSF)")
-        self.ax_beam.set_xlabel("Position (parsecs)")
-        self.ax_beam.set_ylabel("Position (parsecs)")
+        self.ax_beam.set_xlabel("x (parsecs)")
+        self.ax_beam.set_ylabel("y (parsecs)")
 
         self.ax_dirty.imshow(self.dirty_image, cmap='hot', origin='lower',
                              extent=[-fov_parsecs / 2, fov_parsecs / 2, -fov_parsecs / 2, fov_parsecs / 2])
         self.ax_dirty.set_title("Dirty Image")
-        self.ax_dirty.set_xlabel("Position (parsecs)")
-        self.ax_dirty.set_ylabel("Position (parsecs)")
+        self.ax_dirty.set_xlabel("x (parsecs)")
+        self.ax_dirty.set_ylabel("y (parsecs)")
 
         self.ax_clean.imshow(self.clean_image, cmap='hot', origin='lower',
                              extent=[-fov_parsecs / 2, fov_parsecs / 2, -fov_parsecs / 2, fov_parsecs / 2])
         self.ax_clean.set_title("CLEAN Image")
-        self.ax_clean.set_xlabel("Position (parsecs)")
-        self.ax_clean.set_ylabel("Position (parsecs)")
+        self.ax_clean.set_xlabel("x (parsecs)")
+        self.ax_clean.set_ylabel("y (parsecs)")
 
         model_fft = np.abs(fftshift(fft2(ifftshift(self.sky_image))))
         self.ax_model_fft.imshow(
             np.log10(model_fft + 1), cmap='hot', origin='lower',
             extent=[-fov_parsecs / 2, fov_parsecs / 2, -fov_parsecs / 2, fov_parsecs / 2])
         self.ax_model_fft.set_title("Model FFT")
-        self.ax_model_fft.set_xlabel("Position (parsecs)")
-        self.ax_model_fft.set_ylabel("Position (parsecs)")
+        self.ax_model_fft.set_xlabel("x (parsecs)")
+        self.ax_model_fft.set_ylabel("y (parsecs)")
 
         self.fig.subplots_adjust(hspace=0.4, wspace=0.4)
         self.fig.tight_layout()
@@ -1026,10 +1032,10 @@ class TelescopeApp:
                 telescopes = []
                 for item in self.eht.tarr:
                     telescopes.append(
-                        (item[0], *TelescopeConfig.ecef_to_lat_lon(item[1], item[2], item[3])))
+                        (item[0], *TelescopeConfig.ecef_to_lat_lon_altitude(item[1], item[2], item[3])))
                 print(x, y)
                 print(telescopes)
-                for name, ty, tx in telescopes:
+                for name, ty, tx, tz in telescopes:
                     print(name, ty, tx)
                     distance = ((x - tx) ** 2 + (y - ty) ** 2) ** 0.5
                     if distance < min_distance:
@@ -1037,6 +1043,11 @@ class TelescopeApp:
                         min_distance = distance
                 if nearest_telescope:
                     self.selected_telescope = nearest_telescope
+                    for tel in telescopes:
+                        print(tel, self.selected_telescope)
+                        if tel[0] == self.selected_telescope:
+                            # self.saved_z = get_elevation(lat=tel[1], lon=-tel[2])
+                            self.saved_z = get_elevation(tel[1], tel[2])
                 print(self.selected_telescope)
 
     def on_mouse_motion(self, event):
@@ -1060,7 +1071,7 @@ class TelescopeApp:
                 self.telescope_array.lat_lon = np.array(new_lat_lon)
                 print(self.telescope_array.lat_lon)
                 new_positions = [
-                    (self.selected_telescope, self.new_y, self.new_x, 0.0)]
+                    (self.selected_telescope, self.new_y, self.new_x, self.saved_z)]
                 print(new_positions)
                 self.eht = modify_telescope_positions(self.eht, new_positions)
                 print(self.eht.tarr)
@@ -1068,6 +1079,7 @@ class TelescopeApp:
                 self.selected_telescope = None
                 self.update_results()
                 self.plot_earth_map()
+                self.update_telescope_list()
 
     def calculate_current_uv(self):
         mode = self.mode_var.get()

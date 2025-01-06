@@ -30,3 +30,15 @@ class TelescopeConfig:
         p = np.sqrt(x**2 + y**2)
         lat = np.degrees(np.arctan2(z, p * (1 - e2)))
         return lat, lon
+
+    @staticmethod
+    def ecef_to_lat_lon_altitude(x, y, z):
+        a = 6378137.0  # semi-major axis in meters
+        e2 = 0.00669437999014  # eccentricity squared
+        lon = np.degrees(np.arctan2(y, x))
+        p = np.sqrt(x**2 + y**2)
+        lat = np.degrees(np.arctan2(z, p * (1 - e2)))
+        lat_rad = np.radians(lat)
+        N = a / np.sqrt(1 - e2 * np.sin(lat_rad)**2)
+        altitude = p / np.cos(lat_rad) - N
+        return lat, lon, altitude
