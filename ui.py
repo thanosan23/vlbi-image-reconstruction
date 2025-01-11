@@ -26,31 +26,21 @@ from config import TelescopeConfig
 from pyhigh import get_elevation
 
 import requests
+import pyproj
 import pandas as pd
 
-geodetic = Proj(proj='latlong', datum='WGS84')
-ecef = Proj(proj='latlong', datum='WGS84',
-            lat_0=0, lon_0=0, x_0=0, y_0=0, z_0=0)
-
-transformer = Transformer.from_proj(geodetic, ecef)
-transformer2 = Transformer.from_proj(ecef, geodetic)
+lla = Proj(proj='latlong', datum='WGS84', ellps='WGS84')
+ecef = Proj(proj='geocent', datum='WGS84', ellps='WGS84')
 
 
-
-def get_elevation(lat, lon):
-    url = f"https://api.opentopodata.org/v1/aster30m?locations={lat},{lon}"
-    r = requests.get(url)
-    data = r.json()
-    elevation = data['results'][0]['elevation']
-    return elevation
-
-
-
-
-def latlon_to_ecef(lat, lon, alt=0):
-    x, y, z = transformer.transform(lon, lat, alt)
+def latlon_to_ecef(lat, lon, alt):
+    x, y, z = pyproj.transform(lla, ecef, lon, lat, alt, radians=False)
     return x, y, z
 
+
+def ecef_to_lla(x, y, z):
+    lat, lon, alt = pyproj.transform(ecef, lla, x, y, z, radians=False)
+    return lat, lon, alt
 
 
 def modify_telescope_positions(eht, new_positions):
@@ -242,7 +232,6 @@ class TelescopeApp:
         self.ax_unet = None
         self.ax_ehtim = None
 
-        print(self.eht.tarr)
         self.update_results()
 
     def setup_telescope_management(self, parent):
@@ -326,7 +315,6 @@ class TelescopeApp:
         if not selection:
             return
 
-        print(selection, self.telescope_array.names)
         idx = selection[0]
 
         if self.mode_var.get() == "VLA":
@@ -352,7 +340,6 @@ class TelescopeApp:
                 self.telescope_array.compute_baselines()
 
                 self.eht = self.eht.remove_site(telescope_name)
-                print(self.eht.tarr)
             else:
                 print("Cannot remove the last EHT telescope")
 
@@ -664,18 +651,31 @@ class TelescopeApp:
         m.drawcountries()
         m.fillcontinents(color='lightgray', lake_color='lightblue')
         m.drawmapboundary(fill_color='lightblue')
+        names = []
+        latlon = []
 
-        for name, (lat, lon) in zip(self.telescope_array.names,
-                                    self.telescope_array.lat_lon):
-            x, y = m(lon, lat)
-            print(lat, lon)
+        for item in self.eht.tarr:
+            name = item[0]
+            x = item[1]
+            y = item[2]
+            z = item[3]
+            lat, lon, alt = ecef_to_lla(x, y, z)
+            names.append(name)
+            latlon.append((lat, lon))
+
+        self.telescope_array.names = names
+        self.telescope_array.lat_lon = latlon
+
+        for name, (lat, lon) in zip(names, latlon):
+            x, y = m(lat, lon)
+            print(name, lat, lon)
             m.plot(x, y, 'ro', markersize=6)
             self.ax_map.text(x + 2, y + 2, name, fontsize=8)
 
-        for i, (lat1, lon1) in enumerate(self.telescope_array.lat_lon):
-            for lat2, lon2 in self.telescope_array.lat_lon[i+1:]:
-                x1, y1 = m(lon1, lat1)
-                x2, y2 = m(lon2, lat2)
+        for i, (lat1, lon1) in enumerate(latlon):
+            for lat2, lon2 in latlon[i+1:]:
+                x1, y1 = m(lat1, lon1)
+                x2, y2 = m(lat2, lon2)
                 self.ax_map.plot([x1, x2], [y1, y2], 'b-',
                                  alpha=0.3, linewidth=0.5)
 
@@ -811,7 +811,9 @@ class TelescopeApp:
                     self.dirty_image = dim
                     self.beam_image = dbeam
 
+                    out = np.flip(out, 0)
                     self.ehtim_output = out
+
                     self.ax_ehtim.clear()
                     self.ax_ehtim.set_title("Ehtim Output")
                     self.ax_ehtim.set_xlabel('x (parsecs)')
@@ -1017,7 +1019,6 @@ class TelescopeApp:
         self.update_results()
 
     def on_mouse_press(self, event):
-        print(event)
         if event.inaxes == self.ax_array and self.mode_var.get() == "VLA":
             if self.telescope_array.select_telescope(event):
                 self.update_plots(self.calculate_current_uv())
@@ -1032,11 +1033,8 @@ class TelescopeApp:
                 telescopes = []
                 for item in self.eht.tarr:
                     telescopes.append(
-                        (item[0], *TelescopeConfig.ecef_to_lat_lon_altitude(item[1], item[2], item[3])))
-                print(x, y)
-                print(telescopes)
-                for name, ty, tx, tz in telescopes:
-                    print(name, ty, tx)
+                        (item[0], *ecef_to_lla(item[1], item[2], item[3])))
+                for name, tx, ty, tz in telescopes:
                     distance = ((x - tx) ** 2 + (y - ty) ** 2) ** 0.5
                     if distance < min_distance:
                         nearest_telescope = name
@@ -1044,10 +1042,8 @@ class TelescopeApp:
                 if nearest_telescope:
                     self.selected_telescope = nearest_telescope
                     for tel in telescopes:
-                        print(tel, self.selected_telescope)
                         if tel[0] == self.selected_telescope:
-                            # self.saved_z = get_elevation(lat=tel[1], lon=-tel[2])
-                            self.saved_z = get_elevation(tel[1], tel[2])
+                            self.saved_z = tel[3]
                 print(self.selected_telescope)
 
     def on_mouse_motion(self, event):
@@ -1069,10 +1065,8 @@ class TelescopeApp:
                     else:
                         new_lat_lon.append(self.telescope_array.lat_lon[i])
                 self.telescope_array.lat_lon = np.array(new_lat_lon)
-                print(self.telescope_array.lat_lon)
                 new_positions = [
                     (self.selected_telescope, self.new_y, self.new_x, self.saved_z)]
-                print(new_positions)
                 self.eht = modify_telescope_positions(self.eht, new_positions)
                 print(self.eht.tarr)
                 self.telescope_array.selected_telescope = None
