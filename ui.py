@@ -9,7 +9,6 @@ from numpy.fft import fft2, ifft2, fftshift, ifftshift
 from PIL import Image
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from scipy.ndimage import gaussian_filter
 from mpl_toolkits.basemap import Basemap
 import datetime
 from astropy.io import fits
@@ -17,17 +16,10 @@ import torch
 import torch.nn as nn
 from torchvision import transforms
 import ehtim as eh
-import ehtim as eh
-from PIL import Image
-import numpy as np
-from pyproj import Proj, Transformer
+from pyproj import Proj
 from telescope import TelescopeArray
-from config import TelescopeConfig
-from pyhigh import get_elevation
 
-import requests
 import pyproj
-import pandas as pd
 
 lla = Proj(proj='latlong', datum='WGS84', ellps='WGS84')
 ecef = Proj(proj='geocent', datum='WGS84', ellps='WGS84')
@@ -277,18 +269,16 @@ class TelescopeApp:
                     self.update_telescope_list()
                     self.update_results()
         else:
-            new_name = f"Tel{len(self.telescope_array.names) + 1}"
-            new_lat_lon = (0.0, 0.0)
-            self.telescope_array.names.append(new_name)
-            if self.telescope_array.lat_lon is None:
-                self.telescope_array.lat_lon = np.array([new_lat_lon])
-            else:
-                self.telescope_array.lat_lon = np.vstack(
-                    [self.telescope_array.lat_lon, new_lat_lon])
-            self.new_positions.append(
-                (new_name, new_lat_lon[0], new_lat_lon[1], 0.0))
 
             if self.add_satellite_var.get():
+                new_name = f"Sat{len(self.telescope_array.names) + 1}"
+                new_lat_lon = (0, 0)
+                self.telescope_array.names.append(new_name)
+                if self.telescope_array.lat_lon is None:
+                    self.telescope_array.lat_lon = np.array([new_lat_lon])
+                else:
+                    self.telescope_array.lat_lon = np.vstack(
+                        [self.telescope_array.lat_lon, new_lat_lon])
                 period_days = self.period_days_var.get()
                 eccentricity = self.eccentricity_var.get()
                 inclination = self.inclination_var.get()
@@ -302,8 +292,24 @@ class TelescopeApp:
                     arg_perigee=arg_perigee,
                 )
             else:
+                new_name = f"Tel{len(self.telescope_array.names) + 1}"
+                new_lat_lon = (4.76667, 1.96667)
+                self.telescope_array.names.append(new_name)
+                if self.telescope_array.lat_lon is None:
+                    self.telescope_array.lat_lon = np.array([new_lat_lon])
+                else:
+                    self.telescope_array.lat_lon = np.vstack(
+                        [self.telescope_array.lat_lon, new_lat_lon])
+                self.new_positions = []
+                self.new_positions.append(
+                    (new_name, new_lat_lon[0], new_lat_lon[1], 88))
+
                 self.eht = self.eht.add_site(
-                    new_name, (new_lat_lon[0], new_lat_lon[1], 0.0))
+                    new_name, (new_lat_lon[0], new_lat_lon[1], 88))
+
+                self.eht = modify_telescope_positions(
+                    self.eht, self.new_positions)
+                print(self.eht.tarr)
 
             self.telescope_array.compute_baselines()
             self.update_telescope_list()
@@ -656,19 +662,19 @@ class TelescopeApp:
 
         for item in self.eht.tarr:
             name = item[0]
-            x = item[1]
-            y = item[2]
-            z = item[3]
-            lat, lon, alt = ecef_to_lla(x, y, z)
-            names.append(name)
-            latlon.append((lat, lon))
+            if name[:3] != 'Sat':
+                x = item[1]
+                y = item[2]
+                z = item[3]
+                lat, lon, alt = ecef_to_lla(x, y, z)
+                names.append(name)
+                latlon.append((lat, lon))
 
         self.telescope_array.names = names
         self.telescope_array.lat_lon = latlon
 
         for name, (lat, lon) in zip(names, latlon):
             x, y = m(lat, lon)
-            print(name, lat, lon)
             m.plot(x, y, 'ro', markersize=6)
             self.ax_map.text(x + 2, y + 2, name, fontsize=8)
 
