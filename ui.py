@@ -159,7 +159,7 @@ class TelescopeApp:
         self.hour_angle = 45
         self.declination = 34.078745
         self.clean_gamma = 0.1
-        self.clean_threshold = 0.0002
+        self.clean_threshold = 2
         self.start_time = datetime.datetime.now()
 
         self.eht = None
@@ -419,7 +419,7 @@ class TelescopeApp:
         create_slider_with_label(
             clean_frame, "Loop Gain:", self.clean_gamma_var, 0.01, 1.0)
         create_slider_with_label(
-            clean_frame, "Threshold:", self.clean_threshold_var, 0.0001, 0.001)
+            clean_frame, "Threshold (1/10000):", self.clean_threshold_var, 1, 10)
 
         telescope_management = ttk.LabelFrame(
             scrollable_frame, text="Telescope Management", style='Modern.TLabelframe')
@@ -833,7 +833,7 @@ class TelescopeApp:
 
                     max_iterations = 100000000
                     gain = self.clean_gamma_var.get()
-                    threshold = self.clean_threshold_var.get()
+                    threshold = self.clean_threshold_var.get() / 10000
                     residual = self.dirty_image.copy()
                     clean_image = np.zeros_like(self.dirty_image)
                     psf = self.beam_image
