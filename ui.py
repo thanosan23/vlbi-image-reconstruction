@@ -878,7 +878,7 @@ class TelescopeApp:
 
                 max_iterations = 10000
                 gain = self.clean_gamma_var.get()
-                threshold = self.clean_threshold_var.get()
+                threshold = self.clean_threshold_var.get() / 10000
                 residual = self.dirty_image.copy()
                 clean_image = np.zeros_like(self.dirty_image)
                 psf = self.beam_image
