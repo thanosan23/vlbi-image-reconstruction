@@ -1,4 +1,3 @@
-import h5py
 import numpy as np
 import torch
 import torch.nn as nn
@@ -8,18 +7,20 @@ from torchvision import transforms
 from PIL import Image
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-
+import glob
 import ehtim as eh
-
 from ehtim_helper import modify_telescope_positions
 
 
-class Galaxy10Dataset(Dataset):
-    def __init__(self, hdf5_file, transform=None):
-        with h5py.File(hdf5_file, 'r') as f:
-            self.images = np.array(f['images'])
-            self.labels = np.array(f['ans'])
-        self.images = self.images[:3000]
+class ImageDataset(Dataset):
+    def __init__(self, folder, transform=None):
+        self.images = []
+        for file in glob.glob(folder + '/*/*')[:50]:
+            image = np.asarray(Image.open(file).convert('RGB').resize(
+                (100, 100), Image.LANCZOS))
+            self.images.append(image)
+        self.images = np.array(self.images)
+
         self.new_images = []
         self.outputs = []
         self.transform = transform
@@ -31,7 +32,7 @@ class Galaxy10Dataset(Dataset):
 
         for i in range(len(self.images)):
             self.new_images.append(np.dot(self.images[i][..., :3], [
-                0.2989, 0.5870, 0.1140]))  # convert to grayscale
+                0.2989, 0.5870, 0.1140]))
             eht_fov = 200 * eh.RADPERUAS
             eht_size = self.new_images[-1].shape[0]
             im = eh.image.Image(
@@ -72,24 +73,76 @@ class Galaxy10Dataset(Dataset):
         return dim, image
 
 
+class UNetModel(nn.Module):
+    def __init__(self, in_channels, out_channels, channels, num_pool_layers, drop_prob):
+        super().__init__()
+        self.down_sample_layers = nn.ModuleList(
+            [ConvBlock(in_channels, channels, drop_prob)])
+        ch = channels
+        for _ in range(num_pool_layers - 1):
+            self.down_sample_layers.append(ConvBlock(ch, ch * 2, drop_prob))
+            ch *= 2
+
+        self.conv = ConvBlock(ch, ch * 2, drop_prob)
+
+        self.up_transpose_conv = nn.ModuleList()
+        self.up_conv = nn.ModuleList()
+        for _ in range(num_pool_layers - 1):
+            self.up_transpose_conv.append(TransposeConvBlock(ch * 2, ch))
+            self.up_conv.append(ConvBlock(ch * 2, ch, drop_prob))
+            ch //= 2
+
+        self.up_transpose_conv.append(TransposeConvBlock(ch * 2, ch))
+        self.up_conv.append(
+            nn.Sequential(
+                ConvBlock(ch * 2, ch, drop_prob),
+                nn.Conv2d(ch, out_channels, kernel_size=1, stride=1),
+            )
+        )
+
+    def forward(self, x):
+        stack = []
+        out = x
+
+        for layer in self.down_sample_layers:
+            out = layer(out)
+            stack.append(out)
+            out = nn.functional.avg_pool2d(
+                out, kernel_size=2, stride=2, padding=0)
+
+        out = self.conv(out)
+
+        for transpose_conv, conv in zip(self.up_transpose_conv, self.up_conv):
+            downsample_layer = stack.pop()
+            out = transpose_conv(out)
+
+            if out.shape[-1] != downsample_layer.shape[-1]:
+                out = nn.functional.pad(out, [0, 1, 0, 1], "reflect")
+
+            out = torch.cat([out, downsample_layer], dim=1)
+            out = conv(out)
+
+        return out
+
+
 class ConvBlock(nn.Module):
     def __init__(self, in_channels, out_channels, drop_prob):
         super().__init__()
         self.layers = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size=3,
-                      padding=1, bias=False),
+            nn.Conv2d(in_channels, out_channels,
+                      kernel_size=3, padding=1, bias=False),
             nn.InstanceNorm2d(out_channels),
-            nn.LeakyReLU(negative_slope=0.2, inplace=True),
+            nn.LeakyReLU(0.2, inplace=True),
             nn.Dropout2d(drop_prob),
-            nn.Conv2d(out_channels, out_channels, kernel_size=3,
-                      padding=1, bias=False),
+            nn.Conv2d(out_channels, out_channels,
+                      kernel_size=3, padding=1, bias=False),
             nn.InstanceNorm2d(out_channels),
-            nn.LeakyReLU(negative_slope=0.2, inplace=True),
+            nn.LeakyReLU(0.2, inplace=True),
             nn.Dropout2d(drop_prob),
         )
 
-    def forward(self, input):
-        return self.layers(input)
+    def forward(self, x):
+        return self.layers(x)
 
 
 class TransposeConvBlock(nn.Module):
@@ -99,116 +152,55 @@ class TransposeConvBlock(nn.Module):
             nn.ConvTranspose2d(in_channels, out_channels,
                                kernel_size=2, stride=2, bias=False),
             nn.InstanceNorm2d(out_channels),
-            nn.LeakyReLU(negative_slope=0.2, inplace=True),
+            nn.LeakyReLU(0.2, inplace=True),
         )
 
-    def forward(self, input):
-        return self.layers(input)
+    def forward(self, x):
+        return self.layers(x)
 
 
-class UNetModel(nn.Module):
-    def __init__(self, in_channels, out_channels, channels, num_pool_layers,
-                 drop_prob):
-        super().__init__()
-        self.down_sample_layers = nn.ModuleList(
-            [ConvBlock(in_channels, channels, drop_prob)])
-        ch = channels
-        for i in range(num_pool_layers - 1):
-            self.down_sample_layers += [ConvBlock(ch, ch * 2, drop_prob)]
-            ch *= 2
-        self.conv = ConvBlock(ch, ch * 2, drop_prob)
+folder = 'data'
+transform = transforms.Compose([transforms.ToTensor()])
+dataset = ImageDataset(folder, transform=transform)
+dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
 
-        self.up_transpose_conv = nn.ModuleList()
-        self.up_conv = nn.ModuleList()
-        for i in range(num_pool_layers - 1):
-            self.up_transpose_conv += [TransposeConvBlock(ch * 2, ch)]
-            self.up_conv += [ConvBlock(ch * 2, ch, drop_prob)]
-            ch //= 2
-
-        self.up_transpose_conv += [TransposeConvBlock(ch * 2, ch)]
-        self.up_conv += [
-            nn.Sequential(
-                ConvBlock(ch * 2, ch, drop_prob),
-                nn.Conv2d(ch, out_channels, kernel_size=1, stride=1),
-            )
-        ]
-
-    def forward(self, input):
-        stack = []
-        output = input
-
-        for layer in self.down_sample_layers:
-            output = layer(output)
-            stack.append(output)
-            output = nn.functional.avg_pool2d(
-                output, kernel_size=2, stride=2, padding=0)
-
-        output = self.conv(output)
-
-        for transpose_conv, conv in zip(self.up_transpose_conv, self.up_conv):
-            downsample_layer = stack.pop()
-            output = transpose_conv(output)
-
-            padding = [0, 0, 0, 0]
-            if output.shape[-1] != downsample_layer.shape[-1]:
-                padding[1] = 1
-            if output.shape[-2] != downsample_layer.shape[-2]:
-                padding[3] = 1
-            if sum(padding) != 0:
-                output = nn.functional.pad(output, padding, "reflect")
-
-            output = torch.cat([output, downsample_layer], dim=1)
-            output = conv(output)
-
-        return output
-
-
-hdf5_file = 'galaxy10.h5'
-transform = transforms.Compose([
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.5], std=[0.5])
-])
-dataset = Galaxy10Dataset(hdf5_file, transform=transform)
-dataloader = DataLoader(dataset, batch_size=16, shuffle=True)
-
+device = "cuda" if torch.cuda.is_available() else "mps"
 model = UNetModel(in_channels=1, out_channels=1, channels=64,
-                  num_pool_layers=4, drop_prob=0.2).to("mps")
+                  num_pool_layers=4, drop_prob=0.2).to(device)
+
 criterion = nn.MSELoss()
 optimizer = optim.Adam(model.parameters(), lr=3e-5)
 
-epochs = 250
+epochs = 150
 for epoch in range(epochs):
     model.train()
     epoch_loss = 0
-    for batch in tqdm(dataloader):
-        dims, images = batch
-        dims = dims.to("mps")
-        images = images.to("mps")
-
-        outputs = model(dims)
-        loss = criterion(outputs, images)
+    for dirty, clean in tqdm(dataloader):
+        dirty, clean = dirty.to(device), clean.to(device)
 
         optimizer.zero_grad()
+        pred = model(dirty)
+        loss = criterion(pred, clean)
         loss.backward()
         optimizer.step()
 
         epoch_loss += loss.item()
 
     print(
-        f"Epoch {epoch + 1}/{epochs}, Loss: {epoch_loss / len(dataloader):.4f}"
-    )
+        f"Epoch {epoch + 1}/{epochs}, Loss: {epoch_loss / len(dataloader):.4f}")
 
-torch.save(model.state_dict(), 'unet_galaxy10_2.pth')
+torch.save(model.state_dict(), 'unet_image.pth')
 
 model.eval()
 dirty_image, test_data = next(iter(dataloader))
-pred = model(dirty_image.to("mps"))
+dirty_image, test_data = dirty_image.to(device), test_data.to(device)
+pred = model(dirty_image).cpu().detach().numpy()
 
-fig, ax = plt.subplots(2, 2)
-ax[0, 0].set_title("Dirty Image")
-ax[0, 0].imshow(dirty_image[0][0].cpu().detach().numpy())
-ax[0, 1].set_title("Original Image")
-ax[0, 1].imshow(test_data[0][0].cpu().detach().numpy())
-ax[1, 0].set_title("Prediction")
-ax[1, 0].imshow(pred[0][0].cpu().detach().numpy())
+fig, ax = plt.subplots(1, 3, figsize=(12, 4))
+ax[0].set_title("Dirty Image")
+ax[0].imshow(dirty_image[0][0].cpu().detach().numpy(), cmap="inferno")
+ax[1].set_title("Original Image")
+ax[1].imshow(test_data[0][0].cpu().detach().numpy(), cmap="inferno")
+ax[2].set_title("Prediction")
+ax[2].imshow(pred[0][0], cmap="inferno")
 plt.show()

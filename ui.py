@@ -208,7 +208,7 @@ class TelescopeApp:
         self.model = UNetModel(in_channels=1, out_channels=1, channels=64,
                                num_pool_layers=4, drop_prob=0.2)
         self.model.load_state_dict(torch.load(
-            "./unet/unet_galaxy10.pth", weights_only=True))
+            "./unet/unet_blackhole.pth", weights_only=True))
         self.model.eval()
 
         self.transform = transforms.Compose([
@@ -859,13 +859,14 @@ class TelescopeApp:
 
                     self.dirty_image = normalize_negative_one(self.dirty_image)
                     test_image = Image.fromarray(self.dirty_image)
-                    test_image = test_image.transpose(Image.FLIP_LEFT_RIGHT)
+                    # test_image = test_image.transpose(Image.FLIP_LEFT_RIGHT)
                     test_image = self.transform(test_image)
                     self.model.eval()
                     with torch.no_grad():
                         pred = self.model(test_image.reshape(
                             1, 69, 69).unsqueeze(0)).squeeze(0).squeeze(0).numpy()
                         pred = normalize_negative_one(pred)
+                        pred = np.flip(pred, 0)
                         self.ax_unet.clear()
                         self.ax_unet.imshow(pred, cmap='hot', extent=[
                             -fov_parsecs / 2, fov_parsecs / 2, -fov_parsecs / 2, fov_parsecs / 2])
