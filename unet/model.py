@@ -1,4 +1,6 @@
 import numpy as np
+from piqa import SSIM
+import pytorch_ssim
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -10,16 +12,18 @@ from tqdm import tqdm
 import glob
 import ehtim as eh
 from ehtim_helper import modify_telescope_positions
+from torch.nn import functional as F
 
 
 class ImageDataset(Dataset):
     def __init__(self, folder, transform=None):
         self.images = []
-        for file in glob.glob(folder + '/*/*')[:50]:
+        for file in glob.glob(folder + '/*/*'):
             image = np.asarray(Image.open(file).convert('RGB').resize(
                 (100, 100), Image.LANCZOS))
             self.images.append(image)
         self.images = np.array(self.images)
+        np.random.shuffle(self.images)
 
         self.new_images = []
         self.outputs = []
@@ -31,8 +35,11 @@ class ImageDataset(Dataset):
         eht = modify_telescope_positions(eht, new_positions)
 
         for i in range(len(self.images)):
-            self.new_images.append(np.dot(self.images[i][..., :3], [
-                0.2989, 0.5870, 0.1140]))
+            gray_image = np.dot(self.images[i][..., :3], [
+                0.2989, 0.5870, 0.1140])
+            gray_image = gray_image - gray_image.min()
+            gray_image = gray_image / (gray_image.max() + 1e-8)
+            self.new_images.append(gray_image)
             eht_fov = 200 * eh.RADPERUAS
             eht_size = self.new_images[-1].shape[0]
             im = eh.image.Image(
@@ -122,6 +129,8 @@ class UNetModel(nn.Module):
             out = torch.cat([out, downsample_layer], dim=1)
             out = conv(out)
 
+        out = nn.functional.sigmoid(out)
+
         return out
 
 
@@ -162,16 +171,56 @@ class TransposeConvBlock(nn.Module):
 folder = 'data'
 transform = transforms.Compose([transforms.ToTensor()])
 dataset = ImageDataset(folder, transform=transform)
-dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
+dataloader = DataLoader(dataset, batch_size=16, shuffle=True)
 
 device = "cuda" if torch.cuda.is_available() else "mps"
 model = UNetModel(in_channels=1, out_channels=1, channels=64,
                   num_pool_layers=4, drop_prob=0.2).to(device)
 
-criterion = nn.MSELoss()
+
+class SSIMLoss(SSIM):
+    def __init__(self):
+        super().__init__(n_channels=1)
+
+    def forward(self, x, y):
+        return 1. - super().forward(x, y)
+
+
+class CombinedLoss(nn.Module):
+    def __init__(self, alpha=0.1, beta=0.1, gamma=0.8):
+        super(CombinedLoss, self).__init__()
+        self.alpha = alpha
+        self.beta = beta
+        self.gamma = gamma
+        self.ssim_loss = SSIMLoss()
+
+    def mse_loss(self, pred, target):
+        return F.mse_loss(pred, target)
+
+    def psnr_loss(self, pred, target):
+        mse = self.mse_loss(pred, target)
+        psnr = 10 * torch.log10(1.0 / mse)
+        return -psnr
+
+    def forward(self, pred, target):
+        ssim_loss = 1 - self.ssim_loss(pred, target)
+
+        psnr_loss = self.psnr_loss(pred, target)
+
+        mse_loss = self.mse_loss(pred, target)
+
+        total_loss = self.alpha * ssim_loss + \
+            self.beta * psnr_loss + self.gamma * mse_loss
+        return total_loss
+
+
+# criterion = nn.MSELoss()
+# criterion = SSIMLoss().to(device)
+criterion = CombinedLoss().to(device)
 optimizer = optim.Adam(model.parameters(), lr=3e-5)
 
-epochs = 150
+
+epochs = 200
 for epoch in range(epochs):
     model.train()
     epoch_loss = 0
@@ -189,7 +238,7 @@ for epoch in range(epochs):
     print(
         f"Epoch {epoch + 1}/{epochs}, Loss: {epoch_loss / len(dataloader):.4f}")
 
-torch.save(model.state_dict(), 'unet_image.pth')
+torch.save(model.state_dict(), 'unet_image_3.pth')
 
 model.eval()
 dirty_image, test_data = next(iter(dataloader))

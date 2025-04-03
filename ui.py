@@ -156,7 +156,7 @@ class TelescopeApp:
 
         self.image_size = 256
         self.wavelength = 1.33
-        self.hour_angle = 45
+        self.hour_angle = 5
         self.declination = 34.078745
         self.clean_gamma = 0.1
         self.clean_threshold = 2
@@ -208,7 +208,7 @@ class TelescopeApp:
         self.model = UNetModel(in_channels=1, out_channels=1, channels=64,
                                num_pool_layers=4, drop_prob=0.2)
         self.model.load_state_dict(torch.load(
-            "./unet/unet_blackhole.pth", weights_only=True))
+            "./unet/unet_image_3.pth", weights_only=True))
         self.model.eval()
 
         self.transform = transforms.Compose([
@@ -790,7 +790,8 @@ class TelescopeApp:
                     bw_hz = 4.e9
                     freq = ((2.998*10e8)/(self.wavelength_var.get()))
                     print("Analyzing at frequency: ", freq)
-                    data = self.eht.obsdata(-self.hour_angle_var.get(), self.declination_var.get(
+                    print(self.hour_angle_var.get())
+                    data = self.eht.obsdata(self.hour_angle_var.get(), self.declination_var.get(
                     ), freq, bw_hz, tint_sec, tadv_sec, tstart_hr, tstop_hr)
                     u = []
                     v = []
