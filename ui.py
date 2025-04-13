@@ -221,7 +221,7 @@ class TelescopeApp:
         self.file_path = "models/double_wide.png"
         self.load_sky_image("models/double_wide.png")
 
-        self.ax_unet = None
+        # self.ax_unet = None
         self.ax_ehtim = None
 
         self.update_results()
@@ -528,7 +528,7 @@ class TelescopeApp:
             self.ax_dirty = self.fig.add_subplot(336)
             self.ax_clean = self.fig.add_subplot(337)
             self.ax_ehtim = self.fig.add_subplot(338)
-            self.ax_unet = self.fig.add_subplot(339)
+            # self.ax_unet = self.fig.add_subplot(339)
             self.plot_earth_map()
         else:
             self.ax_array = self.fig.add_subplot(331)
@@ -868,12 +868,12 @@ class TelescopeApp:
                             1, 69, 69).unsqueeze(0)).squeeze(0).squeeze(0).numpy()
                         pred = normalize_negative_one(pred)
                         pred = np.flip(pred, 0)
-                        self.ax_unet.clear()
-                        self.ax_unet.imshow(pred, cmap='hot', extent=[
-                            -fov_parsecs / 2, fov_parsecs / 2, -fov_parsecs / 2, fov_parsecs / 2])
-                        self.ax_unet.set_title("UNet Output")
-                        self.ax_unet.set_xlabel('x (parsecs)')
-                        self.ax_unet.set_ylabel('y (parsecs)')
+                        # self.ax_unet.clear()
+                        # self.ax_unet.imshow(pred, cmap='hot', extent=[
+                        #     -fov_parsecs / 2, fov_parsecs / 2, -fov_parsecs / 2, fov_parsecs / 2])
+                        # self.ax_unet.set_title("UNet Output")
+                        # self.ax_unet.set_xlabel('x (parsecs)')
+                        # self.ax_unet.set_ylabel('y (parsecs)')
             else:
                 self.dirty_image = self.generate_dirty_image(uv_coordinates)
                 self.beam_image = self.generate_beam_image(uv_coordinates)
