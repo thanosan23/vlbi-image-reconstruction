@@ -7,3 +7,5 @@ galaxy10.h5
 *.pth
 unet/blackhole/*
 unet/data/*
+dist/
+build/
