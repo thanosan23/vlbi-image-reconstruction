@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="description"
+      content="Astraeus: Radio Interferometry Simulation">
+    <meta name="keywords" content="VLBI, Astraeus">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Astraeus: Radio Interferometry Simulation</title>
+
+    <link href="https://fonts.googleapis.com/css?family=Google+Sans|Noto+Sans|Castoro"
+      rel="stylesheet">
+
+    <link rel="stylesheet" href="./static/css/bulma.min.css">
+    <link rel="stylesheet" href="./static/css/bulma-carousel.min.css">
+    <link rel="stylesheet" href="./static/css/bulma-slider.min.css">
+    <link rel="stylesheet" href="./static/css/fontawesome.all.min.css">
+    <link rel="stylesheet"
+      href="https://cdn.jsdelivr.net/gh/jpswalsh/academicons@1/css/academicons.min.css">
+    <link rel="stylesheet" href="./static/css/index.css">
+    <link rel="icon" href="./static/images/favicon.svg">
+
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <script defer src="./static/js/fontawesome.all.min.js"></script>
+    <script src="./static/js/bulma-carousel.min.js"></script>
+    <script src="./static/js/bulma-slider.min.js"></script>
+    <script src="./static/js/index.js"></script>
+    <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.4.0/model-viewer.min.js"></script>
+  </head>
+  <body>
+
+
+    <section class="hero">
+      <div class="hero-body">
+        <div class="container is-max-desktop">
+          <div class="columns is-centered">
+            <div class="column has-text-centered">
+              <h1 class="title is-1 publication-title">Astraeus: Radio Interferometry Simulation</h1>
+              <div class="is-size-4 publication-authors">
+                <span class="author-block">
+                  <a href="">Thanosan Prathifkumar</a><sup>1</sup>,</span>
+                <span class="author-block">
+                  <a href="https://www.linkedin.com/in/krishhdesai/">Krish Desai</a><sup>2</sup>,</span>
+                <span class="author-block">
+                  <a href="https://www.aviadlevis.info/">Aviad Levis</a><sup>3</sup>
+                </span>
+              </div>
+
+              <div class="is-size-4 publication-authors">
+                <span class="author-block"><sup>1</sup>Central Peel Secondary School, </span>
+                <span class="author-block"><sup>2</sup>Turner Fenton Secondary School, </span>
+                <span class="author-block"><sup>3</sup>University of Toronto </span>
+              </div>
+
+              <div class="column has-text-centered">
+                <div class="publication-links">
+                  <span class="link-block">
+                    <a href="https://github.com/thanosan23/vlbi-image-reconstruction"
+                      class="external-link button is-normal is-rounded is-dark">
+                      <span class="icon">
+                        <i class="fab fa-github"></i>
+                      </span>
+                      <span>Code</span>
+                    </a>
+                  </span>
+                </div>
+
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="hero teaser">
+      <div class="container is-max-desktop">
+        <div class="hero-body">
+          <img src="static/images/teaser.png" style="border-radius: 16px;">
+        </div>
+      </div>
+    </section>
+    
+    <section class="section">
+      <div class="container is-max-desktop">
+        <div class="columns is-centered has-text-centered">
+          <div class="column is-four-fifths">
+            <h2 class="title is-3">Abstract</h2>
+          </div>
+        </div>
+        <div class="content has-text-justified">
+          Radio interferometry arrays—such as the VLA, ALMA, and the EHT—are composed of multiple radio telescopes operating in synchrony. These telescopes, often separated by vast distances, work together to observe astronomical radio sources with a resolution far beyond what a single dish could achieve. Each pair of telescopes samples a specific spatial frequency: closer pairs detect broad, smooth features, while distant pairs capture finer details. The Event Horizon Telescope (EHT), for example, is a global-scale array that leverages the entire Earth as a virtual dish. Since the placement of telescopes directly influences image resolution and quality, optimizing their configuration is essential. This project introduces an interactive visualization tool that simulates the image formation process in interferometric arrays. It enables scientists and educators to experiment with different configurations—ground-based or satellite-based—without the cost or constraints of real-world deployment. By visualizing UV coverage and image reconstruction outcomes, this tool supports both informed scientific decision-making and broader educational engagement.
+        </div>
+        <hr>
+        <div class="columns is-centered has-text-centered">
+          <div class="column is-four-fifths">
+            <h2 class="title is-3">Background &amp; Motivation</h2>
+          </div>
+        </div>
+        <div class="content has-text-justified">
+          The EHT’s groundbreaking image of a black hole was the result of decades of work and over $60 million in funding. However, the addition of each new telescope requires substantial investment, both financially and logistically. The scientific benefit of a new telescope depends heavily on its position relative to the existing array, making efficient placement critical. Beyond cost, geopolitical factors can limit where telescopes can be built. 
+          <br>
+          <br>
+          Some regions restrict such installations due to political boundaries or lack of infrastructure, introducing further constraints in array planning. Given these challenges, there is a clear need for a system that allows scientists to simulate and visualize how new configurations will impact image quality before making costly decisions. This tool addresses that need, offering a way to explore telescope placement, satellite involvement, and signal processing strategies virtually. By enabling this kind of preemptive analysis, the tool can help guide the development of next-generation interferometers with greater efficiency and lower risk.          <br>
+          
+        </div>
+        <section class="hero teaser">
+          <div class="container is-max-desktop">           
+              <img src="static/images/eht-lead.jpg" alt="Teaser animation" width="600" style="border-radius: 10px;">     
+          </div>
+        </section>
+        <hr>
+        <div class="columns is-centered has-text-centered">
+          <div class="column is-four-fifths">
+            <h2 class="title is-3">Introduction</h2>
+          </div>
+        </div>
+        <div class="content has-text-justified">
+          Interferometry is a technique in radio astronomy that combines the signals from multiple radio antennas to form a single, high-resolution image of a distant source. Each antenna in an array observes the same celestial object from a slightly different angle. By correlating these signals, the array achieves a resolution equivalent to that of a telescope the size of the maximum distance between the antennas—known as the baseline. This technique allows astronomers to resolve structures that would otherwise be impossible to distinguish with individual telescopes. Arrays like ALMA and the VLA utilize this method on a continental scale, while the EHT operates globally. Some components of the EHT, such as ALMA itself, are interferometers on their own, consisting of dozens of antennas that work together as a local array before contributing to the larger network.          <br>
+          <br>
+          One of the main challenges in radio interferometry is that it does not capture an image directly. Instead, it samples spatial frequency components of the sky, which are then processed to reconstruct the original image. Due to incomplete sampling—since no array can cover all possible baselines—this reconstruction is imperfect and often includes noise or artifacts. To address this, algorithms like CLEAN are used. CLEAN iteratively identifies the strongest signal points (or "peaks") in the observed image and subtracts them, helping to reveal the underlying source structure more clearly. In advanced imaging, the ehtim library is also employed to simulate and reconstruct images with realistic constraints.          
+        </div>
+        <section class="hero teaser">
+          <div class="container is-max-desktop">           
+              <img src="static/images/Earth_gif.gif" alt="Teaser animation" width="300" style="border-radius: 10px;">     
+          </div>
+        </section>
+        <hr>
+        <div class="columns is-centered has-text-centered">
+          <div class="column is-four-fifths">
+            <h2 class="title is-3">Our Tool</h2>
+          </div>
+        </div>
+        <div class="content has-text-justified">
+          Our tool allows users to simulate the image produced by a radio interferometry array with a high degree of flexibility and interactivity. Users can upload a custom model image—such as a black hole simulation or a collection of point sources—and adjust various array parameters including wavelength and observation duration. Telescope positions can be added, removed, or moved freely, including the option to incorporate satellite-based telescopes. Satellite-specific parameters such as eccentricity and arc perigee are also customizable. Additionally, users can modify the source direction and fine-tune the parameters of the CLEAN algorithm, such as loop gain and threshold, to see how these affect the reconstructed image.          <br>
+          <br>
+          The tool provides multiple outputs to help interpret the simulated configuration. These include the beam pattern, the Fourier transform of the input image, the UV coverage corresponding to the array layout, and the resulting dirty image. This dirty image is then processed using both the CLEAN algorithm and the ehtim pipeline to produce refined reconstructions. Through this simulation and visualization workflow, the tool enables deeper insight into how different configurations influence final image quality.
+          <br>
+          <br>
+          <video controls muted loop>
+            <source src="static/images/demo.mp4" type="video/mp4">
+            Your browser does not support the video tag.
+            </source>
+          </video>
+        </div>
+        <br>
+
+    </section>
+
+    <section class="section">
+      <div class="container is-max-desktop">
+        <div class="columns is-centered has-text-centered">
+          <div class="column is-four-fifths">
+            <h2 class="title is-3">Contact Us</h2>
+            <p class="subtitle is-5">Have questions or inquiries? Fill out the form below, and we'll get back to you!</p>
+          </div>
+        </div>
+        <div class="columns is-centered">
+          <div class="column is-half">
+            <form id="contact-form">
+              <div class="field">
+                <label class="label">Name</label>
+                <div class="control">
+                  <input class="input" type="text" placeholder="Your Name" name="name" required>
+                </div>
+              </div>
+              <div class="field">
+                <label class="label">Email</label>
+                <div class="control">
+                  <input class="input" type="email" placeholder="Your Email" name="email" required>
+                </div>
+              </div>
+              <div class="field">
+                <label class="label">Message</label>
+                <div class="control">
+                  <textarea class="textarea" placeholder="Your Question or Inquiry" name="message" required></textarea>
+                </div>
+              </div>
+              <div class="field is-grouped is-grouped-centered">
+                <div class="control">
+                  <button class="button is-link" type="submit">Send</button>
+                </div>
+                <div class="control">
+                  <button class="button is-light" type="reset">Clear</button>
+                </div>
+              </div>
+            </form>
+            <div id="confirmation-message" class="notification is-success is-hidden">
+              Your inquiry has been sent successfully!
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <div class="columns is-centered">
+        <div class="column is-4">
+          <div class="content" >
+            <!-- Add Footer Content Here If Needed --> 
+          </div>
+        </div>
+      </div>
+      </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+    <script>
+      // Initialize EmailJS with your User ID
+      emailjs.init('XZ3rtnOZg0S8kq68e'); // Replace with your actual User ID
+      console.log('EmailJS initialized'); // Debugging: Confirm initialization
+
+      document.getElementById('contact-form').addEventListener('submit', function (event) {
+        event.preventDefault();
+
+        const formData = new FormData(event.target);
+        const data = {
+          name: formData.get('name'),
+          email: formData.get('email'),
+          message: formData.get('message'),
+        };
+
+        console.log('Form Data:', data); // Debugging: Log form data
+
+        emailjs.send('service_sxljepi', 'template_1fg7wfl', data) // Replace with your service_id and template_id
+          .then((response) => {
+            console.log('EmailJS Response:', response); // Debugging: Log success response
+            const notification = document.getElementById('confirmation-message');
+            notification.textContent = 'Your inquiry has been sent successfully!';
+            notification.className = 'notification is-success';
+            notification.style.display = 'block';
+            event.target.reset();
+          })
+          .catch((error) => {
+            console.error('EmailJS Error:', error); // Debugging: Log error response
+            const notification = document.getElementById('confirmation-message');
+            notification.textContent = 'Failed to send your inquiry. Please try again.';
+            notification.className = 'notification is-danger';
+            notification.style.display = 'block';
+          });
+      });
+    </script>
+  </body>
+</html>
